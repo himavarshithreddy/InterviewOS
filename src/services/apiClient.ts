@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { CandidateProfile, Panelist, FinalReport, ApiError } from '../types';
-import { API_ENDPOINTS, CONFIG, ERROR_MESSAGES } from '../constants';
+import { CandidateProfile, Panelist, FinalReport, ApiError } from '@/types';
+import { API_ENDPOINTS, CONFIG, ERROR_MESSAGES } from '@/src/constants';
 
 class ApiClient {
     private client: AxiosInstance;

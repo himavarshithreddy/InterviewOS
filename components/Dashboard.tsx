@@ -1,5 +1,5 @@
 import React from 'react';
-import { FinalReport } from '../types';
+import { FinalReport } from '@/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 interface Props {

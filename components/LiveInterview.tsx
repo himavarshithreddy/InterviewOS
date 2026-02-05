@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
-import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '../utils/audioUtils';
-import { CandidateProfile, Panelist } from '../types';
+import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '@/utils/audioUtils';
+import { CandidateProfile, Panelist } from '@/types';
 
 interface Props {
   candidate: CandidateProfile;
@@ -56,8 +56,8 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   // Start Session
   const startSession = async () => {
     try {
-      const apiKey = process.env.API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+      if (!apiKey) throw new Error("VITE_GEMINI_API_KEY is not set in environment");
 
       const ai = new GoogleGenAI({ apiKey });
       

@@ -1,4 +1,4 @@
-import { CandidateProfile, Panelist, InterviewSession, TranscriptMessage } from '../types';
+import { CandidateProfile, Panelist, InterviewSession, TranscriptMessage } from '@/types';
 
 const SESSION_KEYS = {
     CANDIDATE: 'interviewos_candidate',

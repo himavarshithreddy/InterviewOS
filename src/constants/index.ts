@@ -1,4 +1,4 @@
-import { AvatarColor, ColorClasses } from '../types';
+import { AvatarColor, ColorClasses } from '@/types';
 
 // API endpoints
 export const API_ENDPOINTS = {

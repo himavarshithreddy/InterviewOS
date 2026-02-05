@@ -1,6 +1,6 @@
 import React from 'react';
-import { Panelist, AvatarColor } from '../types';
-import { AVATAR_COLOR_CLASSES } from '../src/constants';
+import { Panelist, AvatarColor } from '@/types';
+import { AVATAR_COLOR_CLASSES } from '@/src/constants';
 
 interface Props {
   panelists: Panelist[];

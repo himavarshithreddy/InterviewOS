@@ -10,10 +10,11 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^1.40.0",
+    "axios": "^1.7.9",
     "react": "^19.2.4",
-    "recharts": "^3.7.0",
     "react-dom": "^19.2.4",
-    "axios": "^1.7.9"
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

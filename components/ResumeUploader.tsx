@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { apiClient } from '../src/services/apiClient';
-import { CandidateProfile, ApiError } from '../types';
-import { CONFIG, ERROR_MESSAGES } from '../src/constants';
+import { apiClient } from '@/src/services/apiClient';
+import { CandidateProfile, ApiError } from '@/types';
+import { CONFIG, ERROR_MESSAGES } from '@/src/constants';
 
 interface Props {
   onUploadComplete: (profile: CandidateProfile) => void;
