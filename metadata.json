@@ -1,0 +1,8 @@
+{
+  "name": "Multipanel Interview AI",
+  "description": "A Gemini 3-powered interview simulation featuring a multi-persona AI panel with real-time audio/video analysis and comprehensive feedback.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
