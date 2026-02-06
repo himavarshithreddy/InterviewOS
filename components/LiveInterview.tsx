@@ -61,6 +61,10 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const lastSpeakerChangeRef = useRef<number>(Date.now());
   const questionCountRef = useRef<number>(0);
 
+  // Orchestration WebSocket
+  const orchestrationWsRef = useRef<WebSocket | null>(null);
+  const [orchestrationHint, setOrchestrationHint] = useState<any>(null);
+
   // Latency metrics (DEV instrumentation)
   const currentTurnIdRef = useRef<number>(0);
   const lastUserAudioChunkTsRef = useRef<number | null>(null);
@@ -164,6 +168,19 @@ ${formattedTranscript}
 `;
     }
 
+    // Apply orchestration hint if available
+    let strategicGuidance = '';
+    if (orchestrationHint && !isIntro) {
+      strategicGuidance = `
+
+STRATEGIC GUIDANCE FROM ORCHESTRATOR:
+- Suggested Topic: ${orchestrationHint.suggestedTopic}
+- Depth Level: ${orchestrationHint.suggestedDepth}/5 (1=surface, 5=very deep)
+- Should Follow Up: ${orchestrationHint.shouldFollowUp ? 'YES - go deeper on this topic' : 'NO - move to new topic'}
+- Reasoning: ${orchestrationHint.reasoning}
+`;
+    }
+
     return `
 You are ${panelist.name}, a ${panelist.role} conducting a job interview.
 Your focus area: ${panelist.focus}
@@ -178,7 +195,7 @@ ${introContext}
 
 OTHER PANEL MEMBERS (for context, but YOU speak alone):
 ${otherPanelists.map(p => `- ${p.name} (${p.role}): ${p.focus}`).join('\n')}
-${conversationContext}
+${conversationContext}${strategicGuidance}
 CRITICAL RULES:
 1. You are ONLY ${panelist.name} - never speak as anyone else
 2. Keep responses concise (2-3 sentences max for questions)
@@ -197,7 +214,7 @@ CRITICAL RULES:
 
 ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, ${panelist.role}. To start us off, could you tell us a little about yourself and your journey?"` : ''}
     `.trim();
-  }, [candidate, panelists]);
+  }, [candidate, panelists, orchestrationHint]);
 
   // Switch to a different panelist session
   const switchToPanelist = useCallback(async (panelistIndex: number, isIntro: boolean = false) => {
@@ -239,7 +256,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       setActiveSpeaker(panelist.name);
 
       const session = await aiRef.current.live.connect({
-        model: 'models/gemini-3-flash-preview',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           systemInstruction: instruction,
           responseModalities: [Modality.AUDIO],
@@ -293,6 +310,9 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       inputContextRef.current = inputCtx;
 
+      // Connect to orchestration WebSocket
+      connectOrchestrationWebSocket();
+
       // Start with first panelist using switchToPanelist
       await switchToPanelist(0, true);
       setConnected(true);
@@ -304,6 +324,58 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       console.error("Failed to start session:", e);
     }
   };
+
+  // Connect to orchestration WebSocket
+  const connectOrchestrationWebSocket = () => {
+    const wsUrl = `ws://localhost:3001/ws/interview`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('Orchestration WebSocket connected');
+      // Initialize session
+      ws.send(JSON.stringify({
+        type: 'init',
+        data: { candidate, panelists }
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'orchestration_hint') {
+          console.log('Received orchestration hint:', message.data);
+          setOrchestrationHint(message.data);
+        }
+      } catch (error) {
+        console.error('Error parsing orchestration message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('Orchestration WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      console.log('Orchestration WebSocket closed');
+    };
+
+    orchestrationWsRef.current = ws;
+  };
+
+  // Send transcript update to orchestration server
+  const sendTranscriptUpdate = useCallback((speaker: 'user' | 'ai', text: string, panelistName?: string) => {
+    if (orchestrationWsRef.current?.readyState === WebSocket.OPEN) {
+      orchestrationWsRef.current.send(JSON.stringify({
+        type: 'transcript_update',
+        data: {
+          speaker,
+          text,
+          timestamp: Date.now(),
+          panelistName
+        }
+      }));
+    }
+  }, []);
 
   const startMediaStreaming = async () => {
     try {
@@ -543,9 +615,11 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         } else {
           // New speaker - save previous line and start new one
           if (currentLineRef.current) {
-            transcriptLinesRef.current.push(
-              `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
-            );
+            const finalizedLine = `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`;
+            transcriptLinesRef.current.push(finalizedLine);
+
+            // Send to orchestration server
+            sendTranscriptUpdate('ai', currentLineRef.current.content, currentLineRef.current.speaker);
           }
           currentLineRef.current = { speaker, content, prefix: '' };
         }
@@ -616,6 +690,11 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
     if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close().catch(console.error);
     if (inputContextRef.current?.state !== 'closed') inputContextRef.current?.close().catch(console.error);
+
+    // Close orchestration WebSocket
+    if (orchestrationWsRef.current?.readyState === WebSocket.OPEN) {
+      orchestrationWsRef.current.close();
+    }
   };
 
   const stopInterview = () => {

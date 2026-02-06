@@ -167,6 +167,350 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                 </div>
             </section>
 
+            {/* Analysis Overview Note */}
+            {report.analysisNote && (
+                <section className="glass rounded-2xl border border-white/20 px-8 py-6 shadow-lg shadow-black/20">
+                    <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <FileText className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-200 mb-1">Analysis Methodology</h3>
+                            <p className="text-sm text-gray-400 leading-relaxed">{report.analysisNote}</p>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {/* Comprehensive Analysis Sections */}
+            {(report.bodyLanguageAnalysis || report.emotionAnalysis || report.speechPatterns) && (
+                <section className="glass rounded-2xl border border-white/20 px-8 py-10 shadow-lg shadow-black/20">
+                    <h2 className="text-2xl font-semibold text-gray-200 mb-8">Comprehensive Analysis</h2>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+                        {/* Body Language Analysis */}
+                        {report.bodyLanguageAnalysis && (
+                            <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-lg font-semibold text-gray-200">Body Language</h3>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-3xl font-mono font-bold text-primary">{report.bodyLanguageAnalysis.overallScore}</span>
+                                        <span className="text-sm text-gray-400">/100</span>
+                                        <span className={`ml-2 px-2 py-1 rounded text-xs font-bold ${report.bodyLanguageAnalysis.grade === 'A' ? 'bg-primary/10 text-primary' :
+                                                report.bodyLanguageAnalysis.grade === 'B' ? 'bg-primary/10 text-primary' :
+                                                    report.bodyLanguageAnalysis.grade === 'C' ? 'bg-accent/10 text-accent' :
+                                                        'bg-destructive/10 text-destructive'
+                                            }`}>
+                                            {report.bodyLanguageAnalysis.grade}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {/* Posture */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Posture</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(report.bodyLanguageAnalysis.posture.score * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.bodyLanguageAnalysis.posture.score * 100}%` }}></div>
+                                        </div>
+                                        <p className="text-xs text-gray-400">{report.bodyLanguageAnalysis.posture.recommendation}</p>
+                                    </div>
+
+                                    {/* Eye Contact */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Eye Contact</span>
+                                            <span className="text-sm font-mono text-primary">{report.bodyLanguageAnalysis.eyeContact.percentage}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.bodyLanguageAnalysis.eyeContact.percentage}%` }}></div>
+                                        </div>
+                                        <p className="text-xs text-gray-400">{report.bodyLanguageAnalysis.eyeContact.recommendation}</p>
+                                    </div>
+
+                                    {/* Gestures */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Gestures</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{report.bodyLanguageAnalysis.gestures.frequency}</span>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-2">{report.bodyLanguageAnalysis.gestures.recommendation}</p>
+                                    </div>
+
+                                    {/* Facial Expression */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Facial Expression Variety</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(report.bodyLanguageAnalysis.facialExpression.variety * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.bodyLanguageAnalysis.facialExpression.variety * 100}%` }}></div>
+                                        </div>
+                                        <p className="text-xs text-gray-400">{report.bodyLanguageAnalysis.facialExpression.recommendation}</p>
+                                    </div>
+                                </div>
+
+                                {/* Strengths & Improvements */}
+                                {(report.bodyLanguageAnalysis.strengths.length > 0 || report.bodyLanguageAnalysis.improvements.length > 0) && (
+                                    <div className="mt-4 pt-4 border-t border-white/10">
+                                        {report.bodyLanguageAnalysis.strengths.length > 0 && (
+                                            <div className="mb-3">
+                                                <h4 className="text-xs font-semibold text-gray-300 mb-2">Strengths</h4>
+                                                <ul className="space-y-1">
+                                                    {report.bodyLanguageAnalysis.strengths.map((strength, idx) => (
+                                                        <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
+                                                            <CheckCircle className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                                                            <span>{strength}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {report.bodyLanguageAnalysis.improvements.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-gray-300 mb-2">Areas to Improve</h4>
+                                                <ul className="space-y-1">
+                                                    {report.bodyLanguageAnalysis.improvements.map((improvement, idx) => (
+                                                        <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
+                                                            <ArrowRight className="w-3 h-3 text-accent flex-shrink-0 mt-0.5" />
+                                                            <span>{improvement}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Emotion & Sentiment Analysis */}
+                        {report.emotionAnalysis && (
+                            <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
+                                <h3 className="text-lg font-semibold text-gray-200 mb-6">Emotion & Sentiment</h3>
+
+                                <div className="space-y-4">
+                                    {/* Confidence */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Confidence</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(report.emotionAnalysis.averageConfidence * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5">
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.emotionAnalysis.averageConfidence * 100}%` }}></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Enthusiasm */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Enthusiasm</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(report.emotionAnalysis.averageEnthusiasm * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5">
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.emotionAnalysis.averageEnthusiasm * 100}%` }}></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Nervousness */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Nervousness</span>
+                                            <span className="text-sm font-mono text-accent">{Math.round(report.emotionAnalysis.averageNervousness * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5">
+                                            <div className="bg-accent h-1.5 rounded-full" style={{ width: `${report.emotionAnalysis.averageNervousness * 100}%` }}></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Sentiment */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm font-medium text-gray-300">Overall Sentiment</span>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${report.emotionAnalysis.overallSentiment === 'positive' ? 'bg-primary/10 text-primary' :
+                                                    report.emotionAnalysis.overallSentiment === 'negative' ? 'bg-destructive/10 text-destructive' :
+                                                        'bg-white/10 text-gray-300'
+                                                }`}>
+                                                {report.emotionAnalysis.overallSentiment}
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5">
+                                            <div className={`h-1.5 rounded-full ${report.emotionAnalysis.sentimentScore > 0 ? 'bg-primary' :
+                                                    report.emotionAnalysis.sentimentScore < 0 ? 'bg-destructive' :
+                                                        'bg-gray-400'
+                                                }`} style={{ width: `${Math.abs(report.emotionAnalysis.sentimentScore) * 100}%` }}></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Voice Characteristics */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <h4 className="text-xs font-semibold text-gray-300 mb-2">Voice Characteristics</h4>
+                                        <div className="grid grid-cols-3 gap-2 text-xs">
+                                            <div>
+                                                <span className="text-gray-400">Pace:</span>
+                                                <span className="ml-1 text-gray-200 capitalize">{report.emotionAnalysis.voiceCharacteristics.pace}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Clarity:</span>
+                                                <span className="ml-1 text-gray-200">{Math.round(report.emotionAnalysis.voiceCharacteristics.clarity * 100)}%</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-400">Volume:</span>
+                                                <span className="ml-1 text-gray-200 capitalize">{report.emotionAnalysis.voiceCharacteristics.volume}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Recommendations */}
+                                {report.emotionAnalysis.recommendations.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-white/10">
+                                        <h4 className="text-xs font-semibold text-gray-300 mb-2">Key Insights</h4>
+                                        <ul className="space-y-1">
+                                            {report.emotionAnalysis.recommendations.map((rec, idx) => (
+                                                <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
+                                                    <CheckCircle className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                                                    <span>{rec}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Speech Patterns */}
+                        {report.speechPatterns && (
+                            <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
+                                <h3 className="text-lg font-semibold text-gray-200 mb-6">Speech Patterns</h3>
+
+                                <div className="space-y-4">
+                                    {/* Speaking Pace */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Speaking Pace</span>
+                                            <span className="text-sm font-mono text-primary">{report.speechPatterns.averagePace} WPM</span>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1">Optimal range: 130-160 words per minute</p>
+                                    </div>
+
+                                    {/* Clarity */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-300">Clarity Score</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(report.speechPatterns.clarityScore * 100)}%</span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-1.5">
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.speechPatterns.clarityScore * 100}%` }}></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Filler Words */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm font-medium text-gray-300">Filler Words</span>
+                                            <span className="text-sm font-mono text-accent">{report.speechPatterns.fillerWordCount}</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {report.speechPatterns.fillerWords.map((word, idx) => (
+                                                <span key={idx} className="text-xs px-2 py-0.5 rounded bg-white/10 text-gray-400">
+                                                    {word}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Pause Analysis */}
+                                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                        <h4 className="text-xs font-semibold text-gray-300 mb-1">Pause Analysis</h4>
+                                        <p className="text-xs text-gray-400">{report.speechPatterns.pauseAnalysis}</p>
+                                    </div>
+                                </div>
+
+                                {/* Recommendations */}
+                                {report.speechPatterns.recommendations.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-white/10">
+                                        <h4 className="text-xs font-semibold text-gray-300 mb-2">Recommendations</h4>
+                                        <ul className="space-y-1">
+                                            {report.speechPatterns.recommendations.map((rec, idx) => (
+                                                <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
+                                                    <ArrowRight className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                                                    <span>{rec}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Temporal Trends */}
+                        {report.temporalTrends && (
+                            <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
+                                <h3 className="text-lg font-semibold text-gray-200 mb-6">Performance Over Time</h3>
+
+                                <div className="h-[250px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={[
+                                            {
+                                                name: 'Start',
+                                                Confidence: Math.round(report.temporalTrends.confidenceTrend[0].value * 100),
+                                                Nervousness: Math.round(report.temporalTrends.nervousnessTrend[0].value * 100),
+                                                Engagement: Math.round(report.temporalTrends.engagementTrend[0].value * 100)
+                                            },
+                                            {
+                                                name: 'Mid',
+                                                Confidence: Math.round(report.temporalTrends.confidenceTrend[Math.floor(report.temporalTrends.confidenceTrend.length / 2)].value * 100),
+                                                Nervousness: Math.round(report.temporalTrends.nervousnessTrend[Math.floor(report.temporalTrends.nervousnessTrend.length / 2)].value * 100),
+                                                Engagement: Math.round(report.temporalTrends.engagementTrend[Math.floor(report.temporalTrends.engagementTrend.length / 2)].value * 100)
+                                            },
+                                            {
+                                                name: 'End',
+                                                Confidence: Math.round(report.temporalTrends.confidenceTrend[report.temporalTrends.confidenceTrend.length - 1].value * 100),
+                                                Nervousness: Math.round(report.temporalTrends.nervousnessTrend[report.temporalTrends.nervousnessTrend.length - 1].value * 100),
+                                                Engagement: Math.round(report.temporalTrends.engagementTrend[report.temporalTrends.engagementTrend.length - 1].value * 100)
+                                            }
+                                        ]}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                            <XAxis dataKey="name" tick={{ fill: 'rgba(148, 163, 184, 0.9)', fontSize: 12 }} />
+                                            <YAxis domain={[0, 100]} tick={{ fill: 'rgba(148, 163, 184, 0.9)', fontSize: 12 }} />
+                                            <Tooltip
+                                                contentStyle={{
+                                                    backgroundColor: 'hsl(var(--popover))',
+                                                    borderColor: 'hsl(var(--border))',
+                                                    color: 'hsl(var(--popover-foreground))',
+                                                    borderRadius: '8px',
+                                                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                                                }}
+                                            />
+                                            <Bar dataKey="Confidence" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="Engagement" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="Nervousness" fill="rgba(239, 68, 68, 0.8)" radius={[4, 4, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="mt-4 p-3 rounded-lg bg-white/[0.04] border border-white/10">
+                                    <p className="text-xs text-gray-400">
+                                        <span className="font-semibold text-gray-300">Trend Analysis:</span> {
+                                            report.temporalTrends.confidenceTrend[report.temporalTrends.confidenceTrend.length - 1].value >
+                                                report.temporalTrends.confidenceTrend[0].value
+                                                ? 'Confidence improved throughout the interview, showing good adaptation and comfort.'
+                                                : 'Confidence remained steady, demonstrating consistent performance.'
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+                </section>
+            )}
+
             {/* Panelist Feedback */}
             <section className="glass rounded-2xl border border-white/20 px-8 py-10 shadow-lg shadow-black/20">
                 <h2 className="text-2xl font-semibold text-gray-200 mb-8">Panelist Remarks</h2>

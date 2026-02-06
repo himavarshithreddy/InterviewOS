@@ -55,6 +55,49 @@ export interface FinalReport {
     name: string;
     comment: string;
   }[];
+
+  // Comprehensive Analysis Data (optional for backward compatibility)
+  bodyLanguageAnalysis?: {
+    overallScore: number;
+    grade: 'A' | 'B' | 'C' | 'D' | 'F';
+    posture: { score: number; recommendation: string };
+    eyeContact: { score: number; percentage: number; recommendation: string };
+    gestures: { score: number; frequency: string; recommendation: string };
+    facialExpression: { score: number; variety: number; recommendation: string };
+    strengths: string[];
+    improvements: string[];
+  };
+
+  emotionAnalysis?: {
+    averageConfidence: number;
+    averageNervousness: number;
+    averageEnthusiasm: number;
+    overallSentiment: 'positive' | 'neutral' | 'negative';
+    sentimentScore: number;
+    voiceCharacteristics: {
+      pace: string;
+      clarity: number;
+      volume: string;
+    };
+    recommendations: string[];
+  };
+
+  speechPatterns?: {
+    averagePace: number; // words per minute
+    fillerWordCount: number;
+    fillerWords: string[];
+    clarityScore: number;
+    pauseAnalysis: string;
+    recommendations: string[];
+  };
+
+  temporalTrends?: {
+    confidenceTrend: Array<{ timestamp: number; value: number }>;
+    nervousnessTrend: Array<{ timestamp: number; value: number }>;
+    engagementTrend: Array<{ timestamp: number; value: number }>;
+  };
+
+  analysisNote?: string; // Note about simulated data or analysis methodology
 }
 
 // Enhanced types for better type safety

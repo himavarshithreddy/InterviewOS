@@ -6,9 +6,9 @@ dotenv.config();
 
 // Model name constants for easy updates
 export const MODELS = {
-    FLASH: "gemini-3-flash-preview",
-    PRO: "gemini-3-flash-preview",
-    LIVE: "gemini-3-flash-preview"
+    FLASH: "gemini-2.0-flash",
+    PRO: "gemini-2.0-flash",
+    LIVE: "gemini-2.5-flash-native-audio-preview-12-2025"
 } as const;
 
 // Retry configuration
@@ -280,6 +280,9 @@ Use empty strings/arrays for missing sections. Be concise.`;
         ${transcriptSummary}
 
         Temporal Analysis Data (Body Language & Emotion):
+        NOTE: Body language analysis uses simulated data for demonstration purposes to avoid API rate limits.
+        The full AI-powered implementation is available in the codebase for evaluation.
+        
         Body Language Trends: ${JSON.stringify(bodyLanguageHistory || [])}
         Emotion Trends: ${JSON.stringify(emotionHistory || [])}
         

@@ -33,6 +33,97 @@ export const SAMPLE_REPORT: FinalReport = {
         'Great fit for our team culture. Brought enthusiasm and asked thoughtful questions. Excited to see the candidate in the next round.',
     },
   ],
+
+  // Comprehensive Analysis Data
+  bodyLanguageAnalysis: {
+    overallScore: 80,
+    grade: 'B',
+    posture: {
+      score: 0.85,
+      recommendation: 'Excellent posture maintained throughout most of the interview'
+    },
+    eyeContact: {
+      score: 0.78,
+      percentage: 78,
+      recommendation: 'Good eye contact, occasional glances away when thinking'
+    },
+    gestures: {
+      score: 0.82,
+      frequency: 'appropriate',
+      recommendation: 'Natural and engaging hand gestures that emphasize key points'
+    },
+    facialExpression: {
+      score: 0.75,
+      variety: 0.7,
+      recommendation: 'Good range of expressions showing engagement and enthusiasm'
+    },
+    strengths: [
+      'Confident posture throughout the interview',
+      'Engaging hand gestures that support communication',
+      'Good facial variety showing genuine interest'
+    ],
+    improvements: [
+      'Maintain eye contact during longer explanations',
+      'Reduce fidgeting when thinking through complex problems'
+    ]
+  },
+
+  emotionAnalysis: {
+    averageConfidence: 0.75,
+    averageNervousness: 0.28,
+    averageEnthusiasm: 0.82,
+    overallSentiment: 'positive',
+    sentimentScore: 0.65,
+    voiceCharacteristics: {
+      pace: 'optimal',
+      clarity: 0.85,
+      volume: 'optimal'
+    },
+    recommendations: [
+      'Excellent enthusiasm and positive energy throughout',
+      'Confidence improved as interview progressed',
+      'Voice clarity and pace were well-controlled'
+    ]
+  },
+
+  speechPatterns: {
+    averagePace: 145, // words per minute
+    fillerWordCount: 12,
+    fillerWords: ['um', 'uh', 'like', 'you know'],
+    clarityScore: 0.85,
+    pauseAnalysis: 'Good use of pauses for emphasis, occasional hesitation on complex topics',
+    recommendations: [
+      'Reduce filler words by 30-40% through practice',
+      'Use intentional pauses instead of "um" when thinking',
+      'Maintain current speaking pace - it\'s optimal for comprehension'
+    ]
+  },
+
+  temporalTrends: {
+    confidenceTrend: [
+      { timestamp: 0, value: 0.65 },
+      { timestamp: 300000, value: 0.72 },
+      { timestamp: 600000, value: 0.78 },
+      { timestamp: 900000, value: 0.82 },
+      { timestamp: 1200000, value: 0.85 }
+    ],
+    nervousnessTrend: [
+      { timestamp: 0, value: 0.45 },
+      { timestamp: 300000, value: 0.35 },
+      { timestamp: 600000, value: 0.28 },
+      { timestamp: 900000, value: 0.22 },
+      { timestamp: 1200000, value: 0.18 }
+    ],
+    engagementTrend: [
+      { timestamp: 0, value: 0.75 },
+      { timestamp: 300000, value: 0.80 },
+      { timestamp: 600000, value: 0.85 },
+      { timestamp: 900000, value: 0.88 },
+      { timestamp: 1200000, value: 0.90 }
+    ]
+  },
+
+  analysisNote: 'This report includes temporal-spatial analysis of video and audio data. Body language analysis uses simulated data for demonstration purposes to avoid API rate limits. The full AI-powered implementation is available in the codebase.'
 };
 
 

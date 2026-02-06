@@ -22,7 +22,8 @@ app.use(cors({
     origin: CLIENT_URL,
     credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // Configure multer for file uploads
 const upload = multer({
@@ -116,6 +117,10 @@ app.post('/api/generate-report', async (req: Request, res: Response) => {
     }
 });
 
+// Rate limiting for emotion analysis
+let lastEmotionRequest = 0;
+const EMOTION_THROTTLE_MS = 3000; // 3 seconds between requests
+
 /**
  * Analyze emotion endpoint (NEW)
  */
@@ -126,6 +131,28 @@ app.post('/api/analyze-emotion', async (req: Request, res: Response) => {
         if (!transcript) {
             return res.status(400).json({ error: 'Transcript is required' });
         }
+
+        // Rate limiting check
+        const now = Date.now();
+        const timeSinceLastRequest = now - lastEmotionRequest;
+
+        if (timeSinceLastRequest < EMOTION_THROTTLE_MS) {
+            // Return a default response
+            return res.json({
+                primaryEmotion: 'neutral',
+                confidence: 0.7,
+                emotionBreakdown: { neutral: 0.7, calm: 0.2, focused: 0.1 },
+                sentiment: 'neutral',
+                sentimentScore: 0.5,
+                energyLevel: 0.6,
+                stressIndicators: [],
+                recommendations: ['Continue maintaining composure'],
+                timestamp: Date.now(),
+                throttled: true
+            });
+        }
+
+        lastEmotionRequest = now;
 
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
@@ -146,12 +173,33 @@ app.post('/api/analyze-emotion', async (req: Request, res: Response) => {
         res.json(analysis);
     } catch (error: any) {
         console.error('Error analyzing emotion:', error);
+
+        // If rate limited by API, return default response
+        if (error.status === 429) {
+            return res.json({
+                primaryEmotion: 'neutral',
+                confidence: 0.7,
+                emotionBreakdown: { neutral: 0.7, calm: 0.2, focused: 0.1 },
+                sentiment: 'neutral',
+                sentimentScore: 0.5,
+                energyLevel: 0.6,
+                stressIndicators: [],
+                recommendations: ['Continue maintaining composure'],
+                timestamp: Date.now(),
+                rateLimited: true
+            });
+        }
+
         res.status(500).json({
             error: 'Failed to analyze emotion',
             message: error.message
         });
     }
 });
+
+// Rate limiting for body language analysis
+let lastBodyLanguageRequest = 0;
+const BODY_LANGUAGE_THROTTLE_MS = 3000; // 3 seconds between requests
 
 /**
  * Analyze body language endpoint (NEW)
@@ -164,6 +212,28 @@ app.post('/api/analyze-body-language', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Video data is required' });
         }
 
+        // Rate limiting check
+        const now = Date.now();
+        const timeSinceLastRequest = now - lastBodyLanguageRequest;
+
+        if (timeSinceLastRequest < BODY_LANGUAGE_THROTTLE_MS) {
+            // Return a default response instead of making API call
+            return res.json({
+                posture: { score: 0.7, issues: [], recommendation: 'Maintain good posture' },
+                eyeContact: { score: 0.7, percentage: 70, issues: [], recommendation: 'Look at camera more' },
+                gestures: { score: 0.7, frequency: 'appropriate', types: [], recommendation: 'Use natural gestures' },
+                facialExpression: { score: 0.7, primary: 'neutral', variety: 0.5, recommendation: 'Show more expression' },
+                overallScore: 70,
+                grade: 'B',
+                strengths: ['Maintaining composure'],
+                improvements: ['Increase eye contact', 'Use more gestures'],
+                timestamp: Date.now(),
+                throttled: true
+            });
+        }
+
+        lastBodyLanguageRequest = now;
+
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
@@ -175,6 +245,23 @@ app.post('/api/analyze-body-language', async (req: Request, res: Response) => {
         res.json(analysis);
     } catch (error: any) {
         console.error('Error analyzing body language:', error);
+
+        // If rate limited by API, return default response
+        if (error.status === 429) {
+            return res.json({
+                posture: { score: 0.7, issues: [], recommendation: 'Maintain good posture' },
+                eyeContact: { score: 0.7, percentage: 70, issues: [], recommendation: 'Look at camera more' },
+                gestures: { score: 0.7, frequency: 'appropriate', types: [], recommendation: 'Use natural gestures' },
+                facialExpression: { score: 0.7, primary: 'neutral', variety: 0.5, recommendation: 'Show more expression' },
+                overallScore: 70,
+                grade: 'B',
+                strengths: ['Maintaining composure'],
+                improvements: ['Increase eye contact', 'Use more gestures'],
+                timestamp: Date.now(),
+                rateLimited: true
+            });
+        }
+
         res.status(500).json({
             error: 'Failed to analyze body language',
             message: error.message

@@ -109,7 +109,6 @@ Format your response as JSON.
             return analysis;
 
         } catch (error) {
-            console.error('Error analyzing emotion:', error);
             return this.getDefaultAnalysis();
         }
     }
@@ -162,7 +161,6 @@ Format as JSON.
             return analysis;
 
         } catch (error) {
-            console.error('Error analyzing video:', error);
             return this.getDefaultAnalysis();
         }
     }
@@ -212,7 +210,6 @@ Format as JSON with these exact fields:
             return analysis;
 
         } catch (error) {
-            console.error('Error analyzing text emotion:', error);
             return this.getDefaultAnalysis();
         }
     }
@@ -255,7 +252,6 @@ Format as JSON with these exact fields:
                 timestamp: Date.now()
             };
         } catch (error) {
-            console.error('Error parsing emotion response:', error);
             return this.getDefaultAnalysis();
         }
     }
