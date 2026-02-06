@@ -181,7 +181,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         config: {
           systemInstruction: instruction,
           responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
+          // inputAudioTranscription: {}, // Disabled completely
           outputAudioTranscription: {},
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
@@ -213,6 +213,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       isSwitchingSessionRef.current = false;
     }
   }, [panelists, generatePanelistInstruction]);
+
+
 
   // Start Session - initialize with first panelist
   const startSession = async () => {
@@ -262,28 +264,56 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       }
 
       // 1. Audio Streaming
+      // 1. Audio Streaming
       const inputCtx = inputContextRef.current!;
-      const source = inputCtx.createMediaStreamSource(stream);
-      // Reduce buffer size to 1024 for lower latency (~64ms per chunk)
-      const processor = inputCtx.createScriptProcessor(1024, 1, 1);
-      processorRef.current = processor;
 
-      processor.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcmBlob = createPcmBlob(inputData, 16000);
+      // Load the AudioWorklet module
+      try {
+        // Try adding module (using relative path from public root)
+        await inputCtx.audioWorklet.addModule('/worklets/audio-processor.js');
+        const source = inputCtx.createMediaStreamSource(stream);
+        const workletNode = new AudioWorkletNode(inputCtx, 'audio-processor');
 
-        // Use current session directly from ref
-        if (sessionRef.current) {
-          sessionRef.current.sendRealtimeInput({ media: pcmBlob });
-        }
-      };
+        workletNode.port.onmessage = (event) => {
+          const inputData = event.data;
+          // Create PCM blob from the raw float32 data (input is 16kHz from context)
+          const pcmBlob = createPcmBlob(inputData, 16000);
 
-      source.connect(processor);
-      // Route through silent GainNode - capture mic for Gemini but don't play back (prevents overlap with AI)
-      const silentGain = inputCtx.createGain();
-      silentGain.gain.value = 0;
-      processor.connect(silentGain);
-      silentGain.connect(inputCtx.destination);
+          if (sessionRef.current) {
+            sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+          }
+        };
+
+        source.connect(workletNode);
+
+        // Keep graph alive with silent output
+        const silentGain = inputCtx.createGain();
+        silentGain.gain.value = 0;
+        workletNode.connect(silentGain);
+        silentGain.connect(inputCtx.destination);
+
+        // Cleanup storage
+        processorRef.current = workletNode as any;
+
+      } catch (err) {
+        console.error('Failed to load audio worklet, falling back to ScriptProcessor:', err);
+        // Fallback to ScriptProcessor if Worklet fails
+        const source = inputCtx.createMediaStreamSource(stream);
+        const processor = inputCtx.createScriptProcessor(1024, 1, 1);
+        processorRef.current = processor;
+
+        processor.onaudioprocess = (e) => {
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcmBlob = createPcmBlob(inputData, 16000);
+          if (sessionRef.current) sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+        };
+
+        source.connect(processor);
+        const silentGain = inputCtx.createGain();
+        silentGain.gain.value = 0;
+        processor.connect(silentGain);
+        silentGain.connect(inputCtx.destination);
+      }
 
       // 2. Video Streaming
       videoIntervalRef.current = window.setInterval(() => {
@@ -399,45 +429,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     const audioCtx = audioContextRef.current;
     if (!audioCtx) return;
 
-    // Handle USER's speech (inputTranscription) - what the user is saying
-    if (message.serverContent?.inputTranscription) {
-      // Use RAW text with spaces preserved - Gemini sends " word" with leading space for new words
-      const rawText = message.serverContent.inputTranscription.text || '';
-      const timestamp = new Date().toISOString().split('T')[1];
-      console.log(`[${timestamp}] INPUT_TRANSCRIPTION: "${rawText}"`);
 
-      if (rawText.length > 0) {
-        // Finalize any current AI line first
-        if (currentLineRef.current && currentLineRef.current.speaker !== 'You') {
-          transcriptLinesRef.current.push(
-            `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
-          );
-          currentLineRef.current = null;
-        }
-
-        // Simply concatenate - Gemini sends fragments with proper spacing
-        if (currentLineRef.current?.speaker === 'You') {
-          currentLineRef.current.content += rawText;
-        } else {
-          // Start a new user line
-          currentLineRef.current = { speaker: 'You', content: rawText.trimStart(), prefix: '' };
-        }
-
-        // Capture first substantial user response as their introduction
-        if (!candidateIntroRef.current && currentLineRef.current.content.length > 50) {
-          candidateIntroRef.current = currentLineRef.current.content;
-        }
-
-        // Update transcript immediately for live feel
-        const newTranscript = [
-          ...transcriptLinesRef.current,
-          currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
-        ].filter(Boolean);
-
-        setTranscript(newTranscript);
-        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
 
     // Handle AI's speech (outputTranscription) - what the panelist is saying
     if (message.serverContent?.outputTranscription) {
@@ -496,60 +488,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       }
     }
 
-    if (message.serverContent?.inputTranscription) {
-      let text = message.serverContent.inputTranscription.text?.trim();
-      if (text) {
-        // Clean up noise markers
-        text = text.replace(/\s*\[(noise|inaudible)\]\s*/gi, ' ').replace(/\s+/g, ' ').trim();
 
-        if (text) {
-          const speaker = 'You';
-          const content = text;
-
-          // Check if continuing current speaker
-          if (currentLineRef.current?.speaker === speaker) {
-            const currentContent = currentLineRef.current.content;
-
-            // Cumulative update check
-            if (content.startsWith(currentContent) && content.length > currentContent.length) {
-              currentLineRef.current.content = content;
-            } else if (!currentContent.includes(content) && content.length > 0) {
-              currentLineRef.current.content = currentContent + (currentContent ? ' ' : '') + content;
-            }
-          } else {
-            // New speaker - save previous and start new
-            if (currentLineRef.current) {
-              // Capture intro if it's the first candidate response and long enough (and haven't captured it yet)
-              if (currentLineRef.current.speaker === 'You' && !candidateIntroRef.current && currentLineRef.current.content.length > 20) {
-                candidateIntroRef.current = currentLineRef.current.content;
-              }
-
-              transcriptLinesRef.current.push(
-                `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
-              );
-            }
-            currentLineRef.current = { speaker, content, prefix: '' };
-          }
-
-          // Update transcript
-          const newTranscript = [
-            ...transcriptLinesRef.current,
-            currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
-          ].filter(Boolean);
-
-          // Only trigger re-render if content length changed by >5 chars or it's a new line
-          // This prevents flickering on every single character update
-          const prevLen = transcript.join('').length;
-          const newLen = newTranscript.join('').length;
-
-          if (newTranscript.length !== transcript.length || Math.abs(newLen - prevLen) > 5) {
-            setTranscript(newTranscript);
-            // Auto-scroll to bottom
-            setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-          }
-        }
-      }
-    }
 
     // Process all audio parts (sequential queue prevents overlap)
     const parts = message.serverContent?.modelTurn?.parts ?? [];
