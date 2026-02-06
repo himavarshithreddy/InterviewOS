@@ -43,12 +43,24 @@ function App() {
         navigate('/upload');
     };
 
+    // Clear session when visiting landing page
+    useEffect(() => {
+        if (location.pathname === '/') {
+            setCandidate(null);
+            setPanelists([]);
+            setFinalReport(null);
+            setInterviewTooShort(false);
+            sessionStorage.clearAll();
+            hasRestoredRef.current = false; // Allow restoration if they navigate away and come back (though data is cleared so it won't matter)
+        }
+    }, [location.pathname]);
+
     // Restore session only once on initial mount (e.g. after page refresh)
     const hasRestoredRef = useRef(false);
     useEffect(() => {
         if (hasRestoredRef.current || isProcessing) return;
-        // Don't restore/redirect if we are viewing sample report
-        if (location.pathname === '/sample-report') return;
+        // Don't restore/redirect if we are viewing sample report OR if we are on landing page
+        if (location.pathname === '/sample-report' || location.pathname === '/') return;
 
         if (candidate && panelists.length > 0) return; // Already have state, skip (e.g. just completed flow)
         const savedCandidate = sessionStorage.getCandidate();

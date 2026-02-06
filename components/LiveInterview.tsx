@@ -33,6 +33,11 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const [bodyLanguageHistory, setBodyLanguageHistory] = useState<any[]>([]);
   const [emotionHistory, setEmotionHistory] = useState<any[]>([]);
 
+  // NEW: Interview phase and time management
+  const [interviewPhase, setInterviewPhase] = useState<'opening' | 'active' | 'closing' | 'completed'>('opening');
+  const [remainingTime, setRemainingTime] = useState<number>(1800); // 30 min in seconds
+  const [showClosingToast, setShowClosingToast] = useState(false);
+
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -274,13 +279,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
             languageCode: 'en-US'
-          },
-          // Low-latency optimizations
-          generationConfig: {
-            responseLogprobs: false,  // Disable logprobs for speed
-            candidateCount: 1,         // Single response only
           }
-          // Note: lowLatencyMode not yet available in current SDK version
         },
         callbacks: {
           onopen: () => {
@@ -357,9 +356,29 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+
         if (message.type === 'orchestration_hint') {
           console.log('Received orchestration hint:', message.data);
           setOrchestrationHint(message.data);
+        } else if (message.type === 'interview_phase_change') {
+          console.log('Phase change:', message.data);
+          const { phase, shouldStartClosing } = message.data;
+          setInterviewPhase(phase);
+
+          // Show single toast when entering closing phase
+          if (shouldStartClosing && !showClosingToast) {
+            setShowClosingToast(true);
+            // Auto-hide toast after 5 seconds
+            setTimeout(() => setShowClosingToast(false), 5000);
+          }
+        } else if (message.type === 'interview_complete') {
+          console.log('Interview completed:', message.data);
+          setInterviewPhase('completed');
+          // Auto-stop interview after brief delay
+          setTimeout(() => stopInterview(), 1000);
+        } else if (message.type === 'time_update') {
+          const { remainingSeconds } = message.data;
+          setRemainingTime(remainingSeconds);
         }
       } catch (error) {
         console.error('Error parsing orchestration message:', error);
@@ -810,10 +829,10 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.5 }}
-      className="h-[calc(100vh-6rem)] w-[calc(100%-3rem)] max-w-[calc(100vw-3rem)] mx-auto flex gap-6 overflow-visible relative py-6"
+      className="h-[calc(100vh-6rem)] w-full px-6 grid grid-cols-[15%_1fr_25%] gap-6 overflow-hidden relative py-6"
     >
       {/* Left: 15% - Panelists */}
-      <div className="w-[15%] min-w-0 flex flex-col gap-4 shrink-0 h-full">
+      <div className="min-w-0 min-h-0 flex flex-col gap-4 h-full">
         {panelists.map((p) => {
           const colorClasses = AVATAR_COLOR_CLASSES[p.avatarColor as AvatarColor] || AVATAR_COLOR_CLASSES.blue;
           return (
@@ -835,8 +854,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         })}
       </div>
 
-      {/* Center: 55% - Camera feed */}
-      <div className="w-[55%] min-w-0 flex flex-col gap-4 shrink-0 h-full">
+      {/* Center: Camera feed */}
+      <div className="min-w-0 min-h-0 flex flex-col gap-4 h-full">
         {/* Monitoring notice - above camera feed */}
         <div className="flex justify-center shrink-0">
           <div className="glass px-4 py-2.5 rounded-xl flex items-center gap-2 text-gray-400 text-xs border border-white/20">
@@ -865,7 +884,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
 
           {/* AI Overlay / Visualizer */}
           <div className="absolute top-6 left-6 right-6 flex justify-between items-start z-10">
-            <div className="glass px-5 py-2.5 rounded-xl flex items-center gap-2 text-gray-200 border border-white/20">
+            <div className="glass px-5 py-2.5 rounded-xl flex items-center gap-3 text-gray-200 border border-white/20">
               <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-primary animate-pulse' : 'bg-destructive'}`} />
               <span className="text-sm font-medium tracking-wide">
                 {connected ? 'LIVE' : 'CONNECTING...'}
@@ -874,16 +893,42 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
               <span className="font-mono text-sm">{formatTime(duration)}</span>
             </div>
 
-            <div className="glass px-5 py-2.5 rounded-xl text-gray-200 flex items-center gap-2 border border-white/20">
-              <Activity className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">{activeSpeaker}</span>
+            {/* Time Remaining Display */}
+            <div className={`glass px-5 py-2.5 rounded-xl border transition-all duration-500 ${remainingTime <= 180
+              ? 'border-red-500/50 bg-red-500/5 animate-pulse'
+              : remainingTime <= 300
+                ? 'border-yellow-500/40 bg-yellow-500/5'
+                : 'border-white/20'
+              }`}>
+              <div className="flex items-center gap-2.5">
+                <svg
+                  className={`w-4 h-4 transition-colors duration-500 ${remainingTime <= 180 ? 'text-red-400' : remainingTime <= 300 ? 'text-yellow-400' : 'text-gray-400'
+                    }`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className={`font-mono text-sm font-medium transition-colors duration-500 ${remainingTime <= 180 ? 'text-red-400' : remainingTime <= 300 ? 'text-yellow-400' : 'text-gray-200'
+                  }`}>
+                  {Math.floor(remainingTime / 60)}:{(remainingTime % 60).toString().padStart(2, '0')}
+                </span>
+                <span className={`text-xs transition-colors duration-500 ${remainingTime <= 180 ? 'text-red-400/70' : remainingTime <= 300 ? 'text-yellow-400/70' : 'text-gray-400'
+                  }`}>
+                  left
+                </span>
+              </div>
             </div>
           </div>
 
-
+          <div className="glass px-5 py-2.5 rounded-xl text-gray-200 flex items-center gap-2 border border-white/20">
+            <Activity className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium">{activeSpeaker}</span>
+          </div>
 
           {/* Floating Controls */}
-          <div className="absolute bottom-3 left-0 right-0 flex justify-center z-20">
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20">
             <div className="h-14 glass rounded-2xl px-6 flex items-center gap-5 shadow-2xl shadow-black/30 border border-white/20">
               <button
                 type="button"
@@ -915,7 +960,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       </div>
 
       {/* Right: 25% - Live transcript */}
-      <div className="w-[25%] min-w-[200px] flex flex-col shrink-0 h-full">
+      <div className="min-w-0 min-h-0 flex flex-col h-full">
         <div className="flex-1 min-h-0 glass rounded-xl border border-white/20 p-5 shadow-lg shadow-black/20 flex flex-col overflow-hidden min-w-0">
           <div className="flex items-center gap-2 mb-4 text-gray-400 px-1">
             <MessageSquare className="w-4 h-4" />
@@ -951,6 +996,25 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           </div>
         </div>
       </div>
-    </motion.div>
+
+      {/* NEW: Closing Phase Toast */}
+      <AnimatePresence>
+        {showClosingToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50"
+          >
+            <div className="glass px-6 py-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 backdrop-blur-xl">
+              <div className="flex items-center gap-3 text-yellow-400">
+                <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                <span className="text-sm font-medium">Interview entering final 3 minutes</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div >
   );
 };

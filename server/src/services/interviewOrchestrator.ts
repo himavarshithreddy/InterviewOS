@@ -1,3 +1,10 @@
+enum InterviewPhase {
+    OPENING = 'opening',
+    ACTIVE = 'active',
+    CLOSING = 'closing',
+    COMPLETED = 'completed'
+}
+
 interface CandidateProfile {
     name: string;
     experience: string[];
@@ -41,6 +48,9 @@ interface InterviewState {
     startTime: number;
     targetDuration: number; // in minutes
     selfCorrectionLog: SelfCorrection[]; // NEW: Track AI's self-corrections
+    phase: InterviewPhase; // NEW: Current interview phase
+    closingStartTime?: number; // NEW: When closing phase started
+    completionTime?: number; // NEW: When interview completed
 }
 
 interface ConversationContext {
@@ -93,6 +103,7 @@ export class InterviewOrchestrator {
     private readonly MIN_DEPTH_PER_TOPIC = 2;
     private readonly MAX_DEPTH = 5;
     private readonly QUESTIONS_PER_PANELIST_ROTATION = 3;
+    private readonly CLOSING_PHASE_DURATION = 3; // minutes before end
 
     constructor(
         sessionId: string,
@@ -114,7 +125,8 @@ export class InterviewOrchestrator {
             conversationHistory: [],
             startTime: Date.now(),
             targetDuration,
-            selfCorrectionLog: [] // NEW: Initialize self-correction tracking
+            selfCorrectionLog: [],
+            phase: InterviewPhase.OPENING // NEW: Start in opening phase
         };
     }
 
@@ -416,6 +428,84 @@ Generate your question now:
             currentTopic: this.state.currentTopic,
             currentDepth: this.state.depthLevel
         };
+    }
+
+    /**
+     * NEW: Get remaining time in seconds
+     */
+    getRemainingTime(): number {
+        const elapsedMs = Date.now() - this.state.startTime;
+        const targetMs = this.state.targetDuration * 60 * 1000;
+        const remainingMs = Math.max(0, targetMs - elapsedMs);
+        return Math.floor(remainingMs / 1000);
+    }
+
+    /**
+     * NEW: Get current interview phase
+     */
+    getInterviewPhase(): InterviewPhase {
+        return this.state.phase;
+    }
+
+    /**
+     * NEW: Check if interview should start closing phase
+     */
+    shouldStartClosing(): boolean {
+        if (this.state.phase === InterviewPhase.CLOSING || this.state.phase === InterviewPhase.COMPLETED) {
+            return false;
+        }
+        const remainingSeconds = this.getRemainingTime();
+        const closingThresholdSeconds = this.CLOSING_PHASE_DURATION * 60;
+        return remainingSeconds <= closingThresholdSeconds && remainingSeconds > 0;
+    }
+
+    /**
+     * NEW: Check if interview should complete
+     */
+    shouldComplete(): boolean {
+        return this.getRemainingTime() === 0;
+    }
+
+    /**
+     * NEW: Transition to closing phase
+     */
+    startClosingPhase(): void {
+        if (this.state.phase !== InterviewPhase.CLOSING) {
+            this.state.phase = InterviewPhase.CLOSING;
+            this.state.closingStartTime = Date.now();
+        }
+    }
+
+    /**
+     * NEW: Mark interview as completed
+     */
+    completeInterview(): void {
+        this.state.phase = InterviewPhase.COMPLETED;
+        this.state.completionTime = Date.now();
+    }
+
+    /**
+     * NEW: Generate closing instruction for panelist
+     */
+    generateClosingInstruction(panelist: Panelist): string {
+        return `
+CRITICAL: The interview is now in the CLOSING PHASE (final 3 minutes).
+
+Your next response should:
+1. Acknowledge the time constraint naturally
+2. Ask ONE final, high-impact question OR provide brief closing remarks
+3. Thank the candidate warmly for their time
+4. DO NOT start new deep topics
+
+Example closing:
+"We're running short on time, so let me ask one final question about ${this.state.currentTopic || 'your experience'}. 
+After you answer, I'll wrap up with some closing thoughts."
+
+OR if wrapping up:
+"Thank you so much for your thoughtful answers today, ${this.state.candidate.name}. 
+It's been great learning about your experience with ${this.state.topicsCovered.slice(0, 2).join(' and ')}. 
+We'll be in touch soon!"
+        `.trim();
     }
 
     /**

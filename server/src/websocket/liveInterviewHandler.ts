@@ -49,6 +49,8 @@ export class LiveInterviewHandler {
     private ws: WebSocket;
     private orchestrator: InterviewOrchestrator | null = null;
     private sessionId: string;
+    private timeCheckInterval: NodeJS.Timeout | null = null;
+    private lastPhase: string | null = null;
 
     constructor(ws: WebSocket, sessionId: string) {
         this.ws = ws;
@@ -112,10 +114,82 @@ export class LiveInterviewHandler {
 
             console.log(`Orchestrator initialized for session: ${this.sessionId}`);
             this.send({ type: 'initialized', data: { sessionId: this.sessionId } });
+
+            // Start periodic time checking (every 10 seconds)
+            this.startTimeChecking();
         } catch (error: any) {
             console.error('Failed to initialize orchestrator:', error);
             this.sendError('Failed to initialize orchestration service');
         }
+    }
+
+    /**
+     * NEW: Start periodic time checking for phase transitions
+     */
+    private startTimeChecking(): void {
+        // Clear any existing interval
+        if (this.timeCheckInterval) {
+            clearInterval(this.timeCheckInterval);
+        }
+
+        // Check time every 10 seconds
+        this.timeCheckInterval = setInterval(() => {
+            this.checkInterviewProgress();
+        }, 10000);
+
+        // Also do an immediate check
+        this.checkInterviewProgress();
+    }
+
+    /**
+     * NEW: Check interview progress and emit events
+     */
+    private checkInterviewProgress(): void {
+        if (!this.orchestrator) return;
+
+        const phase = this.orchestrator.getInterviewPhase();
+        const remainingSeconds = this.orchestrator.getRemainingTime();
+
+        // Check for phase transitions
+        if (this.orchestrator.shouldStartClosing()) {
+            this.orchestrator.startClosingPhase();
+            this.send({
+                type: 'interview_phase_change',
+                data: {
+                    phase: 'closing',
+                    remainingSeconds,
+                    shouldStartClosing: true
+                }
+            });
+            console.log(`Interview entering closing phase: ${remainingSeconds}s remaining`);
+        } else if (this.orchestrator.shouldComplete()) {
+            this.orchestrator.completeInterview();
+            const progress = this.orchestrator.getProgress();
+            this.send({
+                type: 'interview_complete',
+                data: {
+                    totalDuration: progress.timeElapsed,
+                    questionCount: progress.questionCount,
+                    topicsCovered: this.orchestrator.getState().topicsCovered
+                }
+            });
+            console.log('Interview completed');
+
+            // Stop time checking
+            if (this.timeCheckInterval) {
+                clearInterval(this.timeCheckInterval);
+                this.timeCheckInterval = null;
+            }
+        }
+
+        // Send time updates
+        this.send({
+            type: 'time_update',
+            data: {
+                remainingSeconds,
+                phase
+            }
+        });
     }
 
     /**
@@ -203,6 +277,12 @@ export class LiveInterviewHandler {
      * Cleanup resources
      */
     private async cleanup(): Promise<void> {
+        // Clear time check interval
+        if (this.timeCheckInterval) {
+            clearInterval(this.timeCheckInterval);
+            this.timeCheckInterval = null;
+        }
+
         this.orchestrator = null;
         console.log(`Session ${this.sessionId} cleaned up`);
     }

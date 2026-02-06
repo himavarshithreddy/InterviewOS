@@ -216,6 +216,7 @@ Use empty strings/arrays for missing sections. Be concise.`;
         - Role (e.g., Senior Engineer, Product Director, HR Business Partner)
         - Focus (Short label, e.g., "System Design", "Product Strategy")
         - Description (Specific questioning style and personality traits matching the ${difficulty} difficulty. e.g., "${style}")
+        - Gender (Must be "Male" or "Female" to assign appropriate voice)
         - AvatarColor (Pick one: "blue", "green", "pink", "purple", "orange", "red")
 
         Return a JSON array of 3 objects.
@@ -235,10 +236,11 @@ Use empty strings/arrays for missing sections. Be concise.`;
                                 name: { type: Type.STRING },
                                 role: { type: Type.STRING },
                                 focus: { type: Type.STRING },
+                                gender: { type: Type.STRING, enum: ["Male", "Female"] },
                                 avatarColor: { type: Type.STRING },
                                 description: { type: Type.STRING }
                             },
-                            required: ["name", "role", "focus", "avatarColor", "description"]
+                            required: ["name", "role", "focus", "gender", "avatarColor", "description"]
                         }
                     }
                 }
@@ -249,15 +251,34 @@ Use empty strings/arrays for missing sections. Be concise.`;
                 throw new Error("Empty response from Gemini API");
             }
 
-            const rawPanelists = JSON.parse(text) as Panelist[];
-            const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
+            const rawPanelists = JSON.parse(text) as (Panelist & { gender: string })[];
 
-            // Ensure IDs are unique and valid, and assign voices
-            return rawPanelists.map((p, i) => ({
-                ...p,
-                id: (i + 1).toString(),
-                voiceName: voices[i % voices.length]
-            }));
+            // Voice assignment pools
+            const maleVoices = ['Puck', 'Charon', 'Fenrir'];
+            const femaleVoices = ['Kore', 'Aoede'];
+
+            // Track used voices to minimize repetition if possible
+            let maleVoiceIndex = 0;
+            let femaleVoiceIndex = 0;
+
+            // Ensure IDs are unique and valid, and assign voices based on gender
+            return rawPanelists.map((p, i) => {
+                let voiceName = 'Puck'; // Default fallback
+
+                if (p.gender === 'Female') {
+                    voiceName = femaleVoices[femaleVoiceIndex % femaleVoices.length];
+                    femaleVoiceIndex++;
+                } else {
+                    voiceName = maleVoices[maleVoiceIndex % maleVoices.length];
+                    maleVoiceIndex++;
+                }
+
+                return {
+                    ...p,
+                    id: (i + 1).toString(),
+                    voiceName: voiceName
+                };
+            });
         });
     }
 
