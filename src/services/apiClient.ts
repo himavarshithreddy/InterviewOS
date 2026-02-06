@@ -80,13 +80,36 @@ class ApiClient {
     }
 
     /**
-     * Parse resume from file
+     * Parse resume from file (requires targetRole for full flow)
      */
     async parseResume(file: File, targetRole: string): Promise<CandidateProfile> {
         return this.retryWithBackoff(async () => {
             const formData = new FormData();
             formData.append('resume', file);
             formData.append('targetRole', targetRole);
+
+            const response = await this.client.post<CandidateProfile>(
+                API_ENDPOINTS.PARSE_RESUME,
+                formData,
+                {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                    timeout: 60000, // 60 seconds for file upload
+                }
+            );
+
+            return response.data;
+        });
+    }
+
+    /**
+     * Parse resume for preview (no targetRole required)
+     */
+    async parseResumePreview(file: File): Promise<CandidateProfile> {
+        return this.retryWithBackoff(async () => {
+            const formData = new FormData();
+            formData.append('resume', file);
 
             const response = await this.client.post<CandidateProfile>(
                 API_ENDPOINTS.PARSE_RESUME,

@@ -1,6 +1,8 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Panelist, AvatarColor } from '@/types';
 import { AVATAR_COLOR_CLASSES } from '@/src/constants';
+import { Sparkles, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 interface Props {
   panelists: Panelist[];
@@ -14,91 +16,113 @@ export const PanelConfiguration: React.FC<Props> = ({ panelists, onPanelistChang
   };
 
   return (
-    <div className="max-w-6xl mx-auto bg-slate-800 rounded-xl p-8 border border-slate-700">
-      <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold text-white mb-2">Configure Your Interview Panel</h2>
-        <p className="text-slate-400">
-          AI has generated these interviewers based on your target role. Customize them to fit your specific needs.
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.5 }}
+      className="w-full max-w-full px-8 md:px-12 pb-24"
+      style={{ paddingTop: '2.5rem' }}
+    >
+      {/* Header */}
+      <div className="text-center mb-20">
+        <h1 className="text-4xl font-semibold mb-6 text-foreground">
+          Your Panel, Your Rules
+        </h1>
+        <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
+          Hand-picked for your role. Tweak their style, dial the pressure, and make them yours.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+      {/* Panelist cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 max-w-[96rem] mx-auto mb-16">
         {panelists.map((p, index) => {
           const colorClasses = getColorClasses(p.avatarColor);
 
           return (
-            <div
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
               key={p.id}
-              className={`bg-slate-900 rounded-lg border-t-4 ${colorClasses.borderTop} flex flex-col shadow-lg`}
+              className="glass rounded-xl border border-white/20 overflow-hidden flex flex-col shadow-lg shadow-black/20 hover:border-primary/40 transition-colors duration-200"
             >
-              <div className="p-4 border-b border-slate-800 bg-slate-900/50">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-10 h-10 rounded-full ${colorClasses.bg} flex items-center justify-center font-bold text-white`}>
+              {/* Card header */}
+              <div className="p-8 border-b border-white/10">
+                <div className="flex items-center gap-5">
+                  <div className={`w-12 h-12 rounded-xl ${colorClasses.bg} flex items-center justify-center font-semibold text-white text-lg shrink-0`}>
                     {p.name[0]}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <input
                       value={p.name}
                       onChange={(e) => onPanelistChange(index, { ...p, name: e.target.value })}
-                      className="bg-transparent text-white font-bold border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none w-full"
+                      className="bg-transparent text-gray-200 font-medium text-lg border-none p-0 focus:ring-0 w-full placeholder-gray-500"
                       placeholder="Name"
                     />
                     <input
                       value={p.role}
                       onChange={(e) => onPanelistChange(index, { ...p, role: e.target.value })}
-                      className="bg-transparent text-xs font-bold uppercase text-slate-500 border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none w-full"
+                      className="bg-transparent text-sm font-medium uppercase tracking-wider text-gray-400 border-none p-0 focus:ring-0 w-full mt-1 placeholder-gray-500"
                       placeholder="Role"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 space-y-4 flex-grow">
+              {/* Card body */}
+              <div className="p-8 space-y-6 flex-1 flex flex-col">
                 <div>
-                  <label className="text-xs text-slate-500 uppercase font-bold block mb-1">
+                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-primary/80 mb-3 flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5" />
                     Primary Focus
                   </label>
                   <input
                     value={p.focus}
                     onChange={(e) => onPanelistChange(index, { ...p, focus: e.target.value })}
-                    className="w-full bg-slate-800 text-slate-200 text-sm p-2 rounded border border-slate-700 focus:border-blue-500 focus:outline-none"
+                    className="w-full h-12 px-4 bg-transparent border border-white/20 rounded-xl text-gray-200 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all"
                     placeholder="e.g., System Design, Algorithms"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-slate-500 uppercase font-bold block mb-1">
+                <div className="flex-1">
+                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-primary/80 mb-3 flex items-center gap-2">
+                    <User className="w-3.5 h-3.5" />
                     Behavior & Style
                   </label>
                   <textarea
                     value={p.description}
                     onChange={(e) => onPanelistChange(index, { ...p, description: e.target.value })}
-                    className="w-full bg-slate-800 text-slate-300 text-sm p-2 rounded border border-slate-700 focus:border-blue-500 focus:outline-none h-32 resize-none"
-                    placeholder="Describe questioning style and personality..."
+                    className="panel-style-textarea w-full min-h-44 px-4 py-3 bg-transparent border border-white/20 rounded-xl text-gray-400 text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all resize-none leading-relaxed overflow-y-auto"
+                    placeholder="Describe questioning style..."
                   />
                 </div>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
 
-      <div className="bg-blue-900/20 border border-blue-800 p-4 rounded-lg mb-8 text-sm text-blue-200 flex items-center gap-2">
-        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <span>
-          <strong>Tip:</strong> You can edit the "Behavior & Style" to change how aggressive, technical, or casual each interviewer acts during the live interview.
-        </span>
+      {/* Pro tip */}
+      <div className="max-w-3xl mx-auto mb-16">
+        <div className="flex items-start gap-4 p-6 rounded-xl bg-white/[0.04] border border-white/10">
+          <AlertCircle className="w-5 h-5 shrink-0 text-primary/80" />
+          <p className="text-sm text-gray-400 leading-relaxed">
+            <span className="font-medium text-primary/90">Pro Tip:</span> Adjust "Behavior & Style" to change the interviewer's personality.
+            Use terms like "aggressive", "supportive", "deep-diver", or "skeptical" to simulate different pressure levels.
+          </p>
+        </div>
       </div>
 
-      <div className="flex justify-center">
+      {/* CTA button */}
+      <div className="flex justify-center pt-4">
         <button
           onClick={onConfirm}
-          className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all hover:scale-105 shadow-lg hover:shadow-green-500/50"
+          className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground h-14 rounded-xl px-10 text-lg font-medium shadow-lg hover:bg-primary/90 hover:shadow-xl active:scale-[0.98] transition-all duration-200"
         >
           Confirm Panel & Start Interview
+          <ArrowRight className="w-5 h-5" />
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 };

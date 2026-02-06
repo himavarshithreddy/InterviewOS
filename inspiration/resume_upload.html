@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>InterviewOS – Upload Resume</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(circle at top, #0f0f0f, #000);
+    }
+
+    .glass {
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(10px);
+    }
+
+    .drop-active {
+      border-color: #3b82f6;
+      background: rgba(59,130,246,0.05);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-white">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-6 py-4 border-b border-white/10">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold">
+        I
+      </div>
+      <span class="font-semibold text-lg">InterviewOS</span>
+    </div>
+    <button class="text-sm text-white/70 hover:text-white transition">
+      ← Back
+    </button>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-6xl mx-auto px-6 py-16">
+    <div class="text-center mb-12">
+      <h1 class="text-4xl font-semibold mb-4">Upload Your Resume</h1>
+      <p class="text-white/60 max-w-xl mx-auto">
+        Our AI will analyze your experience and tailor interview questions specifically for you.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
+      
+      <!-- Upload Box -->
+      <div
+        id="dropzone"
+        class="glass border border-dashed border-white/20 rounded-xl p-10 text-center cursor-pointer transition"
+      >
+        <input
+          id="fileInput"
+          type="file"
+          accept="application/pdf"
+          class="hidden"
+        />
+
+        <div class="mx-auto w-14 h-14 mb-6 rounded-xl bg-white/5 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M12 16V8m0 0l-3 3m3-3l3 3M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+          </svg>
+        </div>
+
+        <p class="font-medium mb-1">
+          Drop your resume or click to upload
+        </p>
+        <p class="text-sm text-white/50">
+          PDF format, up to 10MB
+        </p>
+      </div>
+
+      <!-- Preview -->
+      <div class="glass rounded-xl p-6 min-h-[420px] flex flex-col">
+        <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-center">
+          <div class="w-14 h-14 mb-6 rounded-xl bg-white/5 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M7 7h10M7 11h10M7 15h6" />
+            </svg>
+          </div>
+          <p class="font-medium mb-1">Resume preview will appear here</p>
+          <p class="text-sm text-white/50">Upload a PDF to get started</p>
+        </div>
+
+        <canvas id="pdfCanvas" class="hidden w-full rounded-lg"></canvas>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const canvas = document.getElementById('pdfCanvas');
+    const emptyState = document.getElementById('emptyState');
+    const ctx = canvas.getContext('2d');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    dropzone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropzone.classList.add('drop-active');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('drop-active');
+    });
+
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('drop-active');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', e => {
+      handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file) return;
+
+      if (file.type !== 'application/pdf') {
+        alert('Please upload a PDF file.');
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be under 10MB.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function () {
+        const typedarray = new Uint8Array(this.result);
+
+        pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+          pdf.getPage(1).then(page => {
+            const viewport = page.getViewport({ scale: 1.2 });
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            page.render({
+              canvasContext: ctx,
+              viewport: viewport
+            });
+
+            emptyState.classList.add('hidden');
+            canvas.classList.remove('hidden');
+          });
+        });
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+
+</body>
+</html>

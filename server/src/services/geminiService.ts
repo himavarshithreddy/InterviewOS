@@ -1,4 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import dotenv from "dotenv";
+
+// Ensure .env is loaded before we read GEMINI_API_KEY
+dotenv.config();
 
 // Model name constants for easy updates
 export const MODELS = {
@@ -8,8 +12,8 @@ export const MODELS = {
 } as const;
 
 // Retry configuration
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 1000; // 1 second
+const MAX_RETRIES = 2;
+const INITIAL_RETRY_DELAY = 500;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
 interface CandidateProfile {
@@ -85,15 +89,31 @@ class GeminiService {
     }
 
     /**
-     * Parse resume from base64 PDF
+     * Map file mime type to Gemini-supported format
      */
-    async parseResume(base64Pdf: string): Promise<CandidateProfile> {
+    private getGeminiMimeType(mimeType: string): string {
+        const supported: Record<string, string> = {
+            "application/pdf": "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword": "application/msword",
+        };
+        return supported[mimeType] || "application/pdf";
+    }
+
+    /**
+     * Parse resume from base64 document (PDF, DOC, DOCX)
+     */
+    async parseResume(base64Data: string, mimeType = "application/pdf"): Promise<CandidateProfile> {
         return this.retryWithBackoff(async () => {
-            const prompt = `
-        Extract the candidate's name, key experience points, skills, and education from this resume.
-        Also provide the full raw text summary of the resume.
-        Return the result in JSON format.
-      `;
+            const geminiMime = this.getGeminiMimeType(mimeType);
+
+            const prompt = `Extract resume data. If NOT a resume/CV, set isResume:false. If it IS a resume:
+- name, jobTitle (current role, skip generic like "Employee"), summary (1-2 sentences)
+- experienceEntries: [{title,company,dates}] for each role
+- experience: key bullet points, skills: array, education: array
+- rawResumeText: concise extracted text (~500 chars)
+- isResume: true/false
+Use empty strings/arrays for missing sections. Be concise.`;
 
             const response = await this.client.models.generateContent({
                 model: MODELS.FLASH,
@@ -101,25 +121,41 @@ class GeminiService {
                     parts: [
                         {
                             inlineData: {
-                                mimeType: "application/pdf",
-                                data: base64Pdf
+                                mimeType: geminiMime,
+                                data: base64Data
                             }
                         },
                         { text: prompt }
                     ]
                 },
                 config: {
+                    maxOutputTokens: 2048,
+                    temperature: 0.1,
                     responseMimeType: "application/json",
                     responseSchema: {
                         type: Type.OBJECT,
                         properties: {
                             name: { type: Type.STRING },
+                            jobTitle: { type: Type.STRING },
+                            summary: { type: Type.STRING },
+                            experienceEntries: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        title: { type: Type.STRING },
+                                        company: { type: Type.STRING },
+                                        dates: { type: Type.STRING }
+                                    }
+                                }
+                            },
                             experience: { type: Type.ARRAY, items: { type: Type.STRING } },
                             skills: { type: Type.ARRAY, items: { type: Type.STRING } },
                             education: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            rawResumeText: { type: Type.STRING }
+                            rawResumeText: { type: Type.STRING },
+                            isResume: { type: Type.BOOLEAN }
                         },
-                        required: ["name", "experience", "skills", "education", "rawResumeText"]
+                        required: ["name", "experience", "skills", "education", "rawResumeText", "isResume"]
                     }
                 }
             });
@@ -129,7 +165,22 @@ class GeminiService {
                 throw new Error("Empty response from Gemini API");
             }
 
-            return JSON.parse(text) as CandidateProfile;
+            const parsed = JSON.parse(text) as CandidateProfile & {
+                jobTitle?: string;
+                summary?: string;
+                experienceEntries?: { title: string; company: string; dates: string }[];
+                isResume: boolean;
+            };
+
+            // Ensure experienceEntries exists for non-resume or missing data
+            if (!parsed.experienceEntries) {
+                parsed.experienceEntries = [];
+            }
+            if (parsed.isResume === undefined) {
+                parsed.isResume = true;
+            }
+
+            return parsed as CandidateProfile;
         });
     }
 
@@ -150,7 +201,7 @@ class GeminiService {
         3. Cultural/HR Representative (Focus on soft skills, values, and collaboration)
 
         For each panelist, provide:
-        - Name (realistic professional name)
+        - Name (simple first + last name. Include 1–2 Indian names in the panel, e.g., Raj Kumar, Priya Sharma; others can be global, e.g., Alex Chen, Sarah Kim. Keep all names short and easy to remember.)
         - Role (e.g., Senior Engineer, Product Director, HR Business Partner)
         - Focus (Short label, e.g., "System Design", "Product Strategy")
         - Description (Specific questioning style and personality traits. e.g., "Asks grilling questions about security" or "Friendly but probes on conflict resolution")

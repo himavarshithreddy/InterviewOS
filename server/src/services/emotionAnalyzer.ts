@@ -92,18 +92,17 @@ Also provide:
 Format your response as JSON.
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.FLASH });
-            const result = await model.generateContent({
-                contents: [{
-                    role: 'user',
+            const result = await this.client.models.generateContent({
+                model: MODELS.FLASH,
+                contents: {
                     parts: [
                         { text: prompt },
                         { inlineData: { mimeType: 'audio/wav', data: audioData } }
                     ]
-                }]
+                }
             });
 
-            const response = result.response.text();
+            const response = result.text || '';
             const analysis = this.parseEmotionResponse(response, transcript);
 
             this.emotionHistory.push(analysis);
@@ -139,18 +138,17 @@ Provide 2-3 specific recommendations for improving presentation.
 Format as JSON.
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.FLASH });
-            const result = await model.generateContent({
-                contents: [{
-                    role: 'user',
+            const result = await this.client.models.generateContent({
+                model: MODELS.FLASH,
+                contents: {
                     parts: [
                         { text: prompt },
                         { inlineData: { mimeType: 'image/jpeg', data: videoFrame } }
                     ]
-                }]
+                }
             });
 
-            const response = result.response.text();
+            const response = result.text || '';
             const analysis = this.parseEmotionResponse(response, transcript);
 
             this.emotionHistory.push(analysis);
@@ -196,9 +194,11 @@ Format as JSON with these exact fields:
 }
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.FLASH });
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
+            const result = await this.client.models.generateContent({
+                model: MODELS.FLASH,
+                contents: prompt
+            });
+            const response = result.text || '';
 
             const analysis = this.parseEmotionResponse(response, transcript);
             this.emotionHistory.push(analysis);

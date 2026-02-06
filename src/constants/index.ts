@@ -18,6 +18,7 @@ export const ERROR_MESSAGES = {
     NETWORK_ERROR: 'Network error. Please check your connection.',
     SERVER_ERROR: 'Server error. Please try again later.',
     PARSE_FAILED: 'Failed to parse resume. Please try again.',
+    NOT_A_RESUME: "This document does not appear to be a resume. Please upload a resume or CV.",
     PANEL_GENERATION_FAILED: 'Failed to generate interview panel. Please try again.',
     REPORT_GENERATION_FAILED: 'Failed to generate report. Please try again.',
     SESSION_INIT_FAILED: 'Failed to initialize interview session.',
@@ -63,6 +64,9 @@ export const AVATAR_COLOR_CLASSES: Record<AvatarColor, ColorClasses> = {
         text: 'text-red-400',
     },
 };
+
+// Minimum interview duration (seconds) for evaluation - skip Gemini API if shorter
+export const MIN_INTERVIEW_DURATION_SECONDS = Number(import.meta.env.VITE_MIN_INTERVIEW_DURATION_SECONDS) || 300; // Default: 5 minutes (300 seconds)
 
 // Configuration
 export const CONFIG = {

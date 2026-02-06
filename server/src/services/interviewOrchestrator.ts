@@ -543,12 +543,12 @@ Generate your question now:
     exportSession(): {
         sessionId: string;
         candidate: CandidateProfile;
-        progress: ReturnType<typeof this.getProgress>;
+        progress: ReturnType<InterviewOrchestrator['getProgress']>;
         insights: {
             strengths: string[];
             weaknesses: string[];
             topicsCovered: string[];
-            selfCorrectionStats: ReturnType<typeof this.getSelfCorrectionStats>;
+            selfCorrectionStats: ReturnType<InterviewOrchestrator['getSelfCorrectionStats']>;
         };
         canResume: boolean;
     } {
@@ -590,4 +590,3 @@ Generate your question now:
         return orchestrator;
     }
 }
-

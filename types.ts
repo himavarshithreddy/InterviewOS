@@ -6,6 +6,12 @@ export enum AppStage {
   EVALUATION = 'EVALUATION',
 }
 
+export interface ExperienceEntry {
+  title: string;
+  company: string;
+  dates: string;
+}
+
 export interface CandidateProfile {
   name: string;
   experience: string[];
@@ -13,6 +19,14 @@ export interface CandidateProfile {
   education: string[];
   rawResumeText: string;
   targetRole?: string;
+  /** Preview-only: current/most recent job title */
+  jobTitle?: string;
+  /** Preview-only: 1-2 sentence professional summary */
+  summary?: string;
+  /** Preview-only: structured work history */
+  experienceEntries?: ExperienceEntry[];
+  /** Preview-only: false if document is not a resume */
+  isResume?: boolean;
 }
 
 export interface Panelist {

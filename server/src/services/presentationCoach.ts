@@ -147,18 +147,21 @@ Format as JSON with these exact fields:
 }
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.FLASH });
-            const result = await model.generateContent({
-                contents: [{
-                    role: 'user',
+            const result = await this.client.models.generateContent({
+                model: MODELS.FLASH,
+                contents: {
                     parts: [
                         { text: prompt },
                         { inlineData: { mimeType: 'image/jpeg', data: videoFrame } }
                     ]
-                }]
+                }
             });
 
-            const response = result.response.text();
+            const response = result.text;
+            if (!response) {
+                console.error('Empty response from Gemini API');
+                return this.getDefaultBodyLanguageAnalysis();
+            }
             const analysis = this.parseBodyLanguageResponse(response);
 
             this.bodyLanguageHistory.push(analysis);
@@ -224,12 +227,16 @@ Format as JSON:
                 parts.push({ inlineData: { mimeType: 'audio/wav', data: audioData } });
             }
 
-            const model = this.client.getGenerativeModel({ model: MODELS.FLASH });
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts }]
+            const result = await this.client.models.generateContent({
+                model: MODELS.FLASH,
+                contents: { parts }
             });
 
-            const response = result.response.text();
+            const response = result.text;
+            if (!response) {
+                console.error('Empty response from Gemini API');
+                return this.getDefaultSpeechPatternAnalysis();
+            }
             const analysis = this.parseSpeechPatternResponse(response, fillerWords);
 
             this.speechPatternHistory.push(analysis);
@@ -315,7 +322,7 @@ Format as JSON:
         const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
         const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
 
-        const trend = secondAvg > firstAvg + 5 ? 'improving' :
+        const trend: 'improving' | 'stable' | 'declining' = secondAvg > firstAvg + 5 ? 'improving' :
             secondAvg < firstAvg - 5 ? 'declining' : 'stable';
 
         // Aggregate strengths and improvements

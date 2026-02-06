@@ -255,9 +255,11 @@ Format as JSON array:
 ]
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.PRO });
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
+            const result = await this.client.models.generateContent({
+                model: MODELS.PRO,
+                contents: prompt
+            });
+            const response = result.text || '';
 
             const questions = this.parseQuestionsResponse(response, industry, difficulty);
             return questions;
@@ -313,9 +315,11 @@ Format as JSON:
 }
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.PRO });
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
+            const result = await this.client.models.generateContent({
+                model: MODELS.PRO,
+                contents: prompt
+            });
+            const response = result.text || '';
 
             const evaluation = this.parseEvaluationResponse(response, industry);
             return evaluation;
@@ -347,9 +351,11 @@ Focus on:
 Format as a JSON array of strings.
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.FLASH });
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
+            const result = await this.client.models.generateContent({
+                model: MODELS.FLASH,
+                contents: prompt
+            });
+            const response = result.text || '';
 
             const jsonMatch = response.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
@@ -392,9 +398,11 @@ Format as JSON:
 }
             `.trim();
 
-            const model = this.client.getGenerativeModel({ model: MODELS.PRO });
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
+            const result = await this.client.models.generateContent({
+                model: MODELS.PRO,
+                contents: prompt
+            });
+            const response = result.text || '';
 
             const jsonMatch = response.match(/\{[\s\S]*\}/);
             if (jsonMatch) {

@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Activity, Eye } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '@/utils/audioUtils';
-import { CandidateProfile, Panelist } from '@/types';
+import { CandidateProfile, Panelist, AvatarColor } from '@/types';
+import { AVATAR_COLOR_CLASSES } from '@/src/constants';
 
 interface Props {
   candidate: CandidateProfile;
   panelists: Panelist[];
-  onFinish: (transcriptSummary: string) => void;
+  onFinish: (transcriptSummary: string, durationSeconds: number) => void;
 }
 
 export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish }) => {
@@ -16,7 +19,10 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const [transcript, setTranscript] = useState<string[]>([]);
   const [micPermission, setMicPermission] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(false);
-  
+  const [micMuted, setMicMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [duration, setDuration] = useState(0);
+
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,7 +32,31 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const videoIntervalRef = useRef<number | null>(null);
-  const sessionRef = useRef<any>(null); // To store session object
+  const sessionRef = useRef<any>(null);
+  const audioQueueRef = useRef<string[]>([]);
+  const isPlayingAudioRef = useRef(false);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const interruptedRef = useRef(false);
+  // Refs for transcript accumulation (avoids race when word-by-word chunks arrive rapidly)
+  const transcriptLinesRef = useRef<string[]>([]);
+  const currentLineRef = useRef<{ speaker: string; content: string; prefix: string } | null>(null);
+  const lastAppendedChunksRef = useRef<string[]>([]);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Timer
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (connected) {
+      interval = setInterval(() => setDuration(prev => prev + 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [connected]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Initial prompt construction
   const systemInstruction = `
@@ -42,15 +72,21 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
     Skills: ${candidate.skills.join(', ')}
     Experience: ${candidate.experience.slice(0, 3).join('; ')}...
 
-    Rules:
-    - You must act as ONE of these personas at a time.
-    - Start the conversation by having ONE panelist introduce the panel and ask the first question relevant to the target role (${candidate.targetRole}).
-    - Be concise. This is a live video interview.
-    - Visually observe the candidate (via the video stream I send you). Comment on their demeanor if relevant (e.g., "You seem confident").
-    - IMPORTANT: Prefix every response with the name of the speaker, like "[${panelists[0].name}]: Hello...".
-    - Pass the conversation between panelists naturally.
-    - If the candidate struggles, offer a hint.
-    - Keep questions relevant to a ${candidate.targetRole} position.
+    CRITICAL FORMATTING RULES:
+    - ALWAYS start EVERY response with [YourName]: before speaking
+    - Example: "[${panelists[0].name}]: Hello, welcome to the interview."
+    - NEVER speak without this exact prefix format
+    - Only ONE panelist speaks at a time - never overlap voices
+    
+    Interview Guidelines:
+    - You must act as ONE of these personas at a time
+    - Start by having ONE panelist introduce the panel and ask the first question
+    - Be concise - this is a live video interview
+    - Pause naturally between speakers - do not rush
+    - Observe the candidate via video and comment on demeanor if relevant
+    - Pass the conversation between panelists naturally
+    - If the candidate struggles, offer a hint
+    - Keep questions relevant to the ${candidate.targetRole} position
   `;
 
   // Start Session
@@ -60,24 +96,22 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
       if (!apiKey) throw new Error("VITE_GEMINI_API_KEY is not set in environment");
 
       const ai = new GoogleGenAI({ apiKey });
-      
-      // Setup Audio Contexts
+
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       audioContextRef.current = audioCtx;
-      
+
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       inputContextRef.current = inputCtx;
 
-      // Connect to Gemini Live
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           systemInstruction: systemInstruction,
           responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {}, // Request transcription of user input
-          outputAudioTranscription: {}, // Request transcription of model output
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           speechConfig: {
-             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } 
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
           }
         },
         callbacks: {
@@ -98,7 +132,7 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
           }
         }
       });
-      
+
     } catch (e) {
       console.error("Failed to start session:", e);
     }
@@ -123,42 +157,35 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
-        // Create PCM blob
         const pcmBlob = createPcmBlob(inputData, 16000);
-        
+
         sessionPromise.then(session => {
-            sessionRef.current = session; // store for cleanup/manual sending
-            session.sendRealtimeInput({ media: pcmBlob });
+          sessionRef.current = session;
+          session.sendRealtimeInput({ media: pcmBlob });
         });
       };
 
       source.connect(processor);
-      processor.connect(inputCtx.destination);
+      // Route through silent GainNode - capture mic for Gemini but don't play back (prevents overlap with AI)
+      const silentGain = inputCtx.createGain();
+      silentGain.gain.value = 0;
+      processor.connect(silentGain);
+      silentGain.connect(inputCtx.destination);
 
-      // 2. Video Streaming (Frames)
-      // Send a frame every 1 second to save bandwidth but allow "visual" context
+      // 2. Video Streaming
       videoIntervalRef.current = window.setInterval(() => {
         if (!canvasRef.current || !videoRef.current) return;
-        
         const ctx = canvasRef.current.getContext('2d');
         if (!ctx) return;
 
-        canvasRef.current.width = videoRef.current.videoWidth / 4; // Downscale for performance
+        canvasRef.current.width = videoRef.current.videoWidth / 4;
         canvasRef.current.height = videoRef.current.videoHeight / 4;
-        
         ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-        
         const base64 = canvasRef.current.toDataURL('image/jpeg', 0.5).split(',')[1];
-        
-        sessionPromise.then(session => {
-             session.sendRealtimeInput({ 
-                 media: { 
-                     mimeType: 'image/jpeg', 
-                     data: base64 
-                 } 
-             });
-        });
 
+        sessionPromise.then(session => {
+          session.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
+        });
       }, 1000);
 
     } catch (err) {
@@ -166,196 +193,347 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
     }
   };
 
+  const processAudioQueue = async () => {
+    const audioCtx = audioContextRef.current;
+    if (!audioCtx || audioQueueRef.current.length === 0) return;
+    if (interruptedRef.current) {
+      audioQueueRef.current = [];
+      return;
+    }
+    // Strict sequential playback - never start next until current ends
+    if (isPlayingAudioRef.current) return;
+
+    isPlayingAudioRef.current = true;
+    const audioData = audioQueueRef.current.shift()!;
+
+    try {
+      const audioBuffer = await decodeAudioData(base64ToUint8Array(audioData), audioCtx, 24000);
+      if (interruptedRef.current) return;
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      currentSourceRef.current = source;
+      source.connect(audioCtx.destination);
+
+      const startTime = Math.max(audioCtx.currentTime, nextStartTimeRef.current);
+      source.start(startTime);
+      nextStartTimeRef.current = startTime + audioBuffer.duration;
+
+      source.onended = () => {
+        currentSourceRef.current = null;
+        isPlayingAudioRef.current = false;
+        if (audioCtx.currentTime >= nextStartTimeRef.current - 0.1) setIsTalking(false);
+        if (!interruptedRef.current && audioQueueRef.current.length > 0) {
+          processAudioQueue();
+        }
+      };
+    } catch (err) {
+      console.error('Audio playback error:', err);
+      isPlayingAudioRef.current = false;
+      if (audioQueueRef.current.length > 0) processAudioQueue();
+    }
+  };
+
   const handleLiveMessage = async (message: LiveServerMessage) => {
     const audioCtx = audioContextRef.current;
     if (!audioCtx) return;
 
-    // Handle Text Transcription (Context & History)
     if (message.serverContent?.outputTranscription) {
-      const text = message.serverContent.outputTranscription.text;
+      const text = message.serverContent.outputTranscription.text?.trim();
       if (text) {
-          // Attempt to parse speaker from text prefix [Name]:
-          const match = text.match(/\[(.*?)]:?/);
-          if (match && match[1]) {
-             setActiveSpeaker(match[1]);
-          }
-          setTranscript(prev => [...prev, `AI: ${text}`]);
-      }
-    }
-    
-    if (message.serverContent?.inputTranscription) {
-         const text = message.serverContent.inputTranscription.text;
-         if(text) setTranscript(prev => [...prev, `You: ${text}`]);
-    }
+        // Extract speaker name from [Name]: prefix
+        const match = text.match(/^\[([^\]]+)\]:?\s*/);
+        const speaker = match?.[1]?.trim() || 'Panel';
+        const content = text.replace(/^\[[^\]]+\]:?\s*/, '').trim();
 
-    // Handle Audio Output
-    const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-    if (audioData) {
-        setIsTalking(true);
-      
-        // Simple timing logic for gapless playback
-        const currentTime = audioCtx.currentTime;
-        if (nextStartTimeRef.current < currentTime) {
-            nextStartTimeRef.current = currentTime;
+        // Update active speaker indicator
+        if (match?.[1]) {
+          setActiveSpeaker(speaker);
         }
 
-        const audioBuffer = await decodeAudioData(
-            base64ToUint8Array(audioData),
-            audioCtx,
-            24000
-        );
+        // Check if this is a continuation of the current speaker
+        if (currentLineRef.current?.speaker === speaker) {
+          const currentContent = currentLineRef.current.content;
 
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        source.start(nextStartTimeRef.current);
-        
-        nextStartTimeRef.current += audioBuffer.duration;
-        
-        source.onended = () => {
-             // Heuristic: if gap is large, we stopped talking
-             if (audioCtx.currentTime >= nextStartTimeRef.current - 0.1) {
-                 setIsTalking(false);
-             }
-        };
+          // Gemini sends cumulative text - check if new text starts with current content
+          if (content.startsWith(currentContent) && content.length > currentContent.length) {
+            // Cumulative update - replace with full text
+            currentLineRef.current.content = content;
+          } else if (!currentContent.includes(content) && content.length > 0) {
+            // New chunk - append with space
+            currentLineRef.current.content = currentContent + (currentContent ? ' ' : '') + content;
+          }
+          // Otherwise it's a duplicate - ignore
+        } else {
+          // New speaker - save previous line and start new one
+          if (currentLineRef.current) {
+            transcriptLinesRef.current.push(
+              `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
+            );
+          }
+          currentLineRef.current = { speaker, content, prefix: '' };
+        }
+
+        // Update transcript display
+        const newTranscript = [
+          ...transcriptLinesRef.current,
+          currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
+        ].filter(Boolean);
+        setTranscript(newTranscript);
+        // Auto-scroll to bottom
+        setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      }
     }
-    
-    // Handle Interruptions
+
+    if (message.serverContent?.inputTranscription) {
+      let text = message.serverContent.inputTranscription.text?.trim();
+      if (text) {
+        // Clean up noise markers
+        text = text.replace(/\s*\[(noise|inaudible)\]\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+
+        if (text) {
+          const speaker = 'You';
+          const content = text;
+
+          // Check if continuing current speaker
+          if (currentLineRef.current?.speaker === speaker) {
+            const currentContent = currentLineRef.current.content;
+
+            // Cumulative update check
+            if (content.startsWith(currentContent) && content.length > currentContent.length) {
+              currentLineRef.current.content = content;
+            } else if (!currentContent.includes(content) && content.length > 0) {
+              currentLineRef.current.content = currentContent + (currentContent ? ' ' : '') + content;
+            }
+          } else {
+            // New speaker - save previous and start new
+            if (currentLineRef.current) {
+              transcriptLinesRef.current.push(
+                `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
+              );
+            }
+            currentLineRef.current = { speaker, content, prefix: '' };
+          }
+
+          // Update transcript
+          const newTranscript = [
+            ...transcriptLinesRef.current,
+            currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
+          ].filter(Boolean);
+          setTranscript(newTranscript);
+          // Auto-scroll to bottom
+          setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+      }
+    }
+
+    // Process all audio parts (sequential queue prevents overlap)
+    const parts = message.serverContent?.modelTurn?.parts ?? [];
+    for (const part of parts) {
+      const audioData = part?.inlineData?.data;
+      if (audioData) {
+        setIsTalking(true);
+        audioQueueRef.current.push(audioData);
+      }
+    }
+    if (audioQueueRef.current.length > 0) processAudioQueue();
+
     if (message.serverContent?.interrupted) {
-        setIsTalking(false);
-        nextStartTimeRef.current = audioCtx.currentTime;
-        // In a real app, cancel currently playing nodes
+      interruptedRef.current = true;
+      currentSourceRef.current?.stop();
+      currentSourceRef.current = null;
+      audioQueueRef.current = [];
+      nextStartTimeRef.current = audioCtx.currentTime;
+      isPlayingAudioRef.current = false;
+      setIsTalking(false);
+      interruptedRef.current = false;
     }
+  };
+
+  const cleanupResources = () => {
+    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+    if (processorRef.current) processorRef.current.disconnect();
+    if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+    if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close().catch(console.error);
+    if (inputContextRef.current?.state !== 'closed') inputContextRef.current?.close().catch(console.error);
   };
 
   const stopInterview = () => {
-    // Cleanup
-    if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-    }
-    if (processorRef.current) {
-        processorRef.current.disconnect();
-    }
-    if (videoIntervalRef.current) {
-        clearInterval(videoIntervalRef.current);
-    }
-    if (audioContextRef.current) {
-        audioContextRef.current.close();
-    }
-    if (inputContextRef.current) {
-        inputContextRef.current.close();
-    }
-    
-    // In real Live API, there isn't a strict 'close' method on the session object exposed in the hook
-    // but the WebSocket closes when the component unmounts or we can force it.
-    // Here we just trigger the finish callback.
-    onFinish(transcript.join('\n'));
+    cleanupResources();
+    onFinish(transcript.join('\n'), duration);
   };
 
-  // Auto-start on mount
+  const toggleMic = () => {
+    if (!streamRef.current) return;
+    const audioTrack = streamRef.current.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setMicMuted(!audioTrack.enabled);
+    }
+  };
+
+  const toggleCamera = () => {
+    if (!streamRef.current) return;
+    const videoTrack = streamRef.current.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      setCameraOff(!videoTrack.enabled);
+    }
+  };
+
   useEffect(() => {
     startSession();
-    return () => {
-        stopInterview();
-    };
+    return () => cleanupResources();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="flex flex-col h-full max-w-6xl mx-auto p-4 gap-6">
-      
-      {/* Header / Status */}
-      <div className="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <div className="flex items-center gap-3">
-             <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-             <span className="font-semibold text-white">{connected ? 'Live Session Active' : 'Connecting to Gemini Live...'}</span>
-             {candidate.targetRole && (
-                 <span className="ml-4 px-3 py-1 bg-slate-700 rounded-full text-xs text-slate-300 border border-slate-600">
-                     Target Role: {candidate.targetRole}
-                 </span>
-             )}
-        </div>
-        <button 
-            onClick={stopInterview}
-            className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-colors"
-        >
-            End Interview
-        </button>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.5 }}
+      className="h-[calc(100vh-6rem)] w-[calc(100%-3rem)] max-w-[calc(100vw-3rem)] mx-auto flex gap-6 overflow-visible relative py-6"
+    >
+      {/* Left: 15% - Panelists */}
+      <div className="w-[15%] min-w-0 flex flex-col gap-4 shrink-0 h-full">
+        {panelists.map((p) => {
+          const colorClasses = AVATAR_COLOR_CLASSES[p.avatarColor as AvatarColor] || AVATAR_COLOR_CLASSES.blue;
+          return (
+            <div
+              key={p.id}
+              className="flex-1 min-h-[80px] glass rounded-xl border border-white/20 p-4 flex flex-col items-center justify-center gap-2 shadow-lg shadow-black/20"
+            >
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-semibold text-white shadow-sm shrink-0 transition-all duration-300 ${colorClasses.bg} ${activeSpeaker.includes(p.name) ? 'ring-4 ring-primary scale-110 shadow-lg shadow-primary/30' : ''}`}
+              >
+                {p.name[0]}
+              </div>
+              <p className={`text-sm font-medium text-center truncate w-full ${activeSpeaker.includes(p.name) ? 'text-primary' : 'text-gray-200'}`}>
+                {p.name}
+              </p>
+              <p className="text-xs text-gray-400 text-center truncate w-full">{p.role}</p>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow">
-        
-        {/* Panelists Area (2/3 width) */}
-        <div className="md:col-span-2 flex flex-col gap-4">
-           {/* Active Speaker Visualizer */}
-           <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 flex flex-col items-center justify-center min-h-[300px] relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900 z-10"></div>
-                
-                {/* Simulated Audio Visualizer Bars */}
-                {isTalking && (
-                     <div className="absolute bottom-0 flex items-end gap-1 h-32 opacity-50 z-0">
-                         {[...Array(20)].map((_, i) => (
-                             <div key={i} 
-                                  className={`w-4 bg-${panelists.find(p => p.name === activeSpeaker)?.avatarColor || 'blue'}-500 rounded-t-sm animate-bounce`} 
-                                  style={{ height: `${Math.random() * 100}%`, animationDuration: `${0.2 + Math.random() * 0.3}s` }}
-                             ></div>
-                         ))}
-                     </div>
-                )}
+      {/* Center: 55% - Camera feed */}
+      <div className="w-[55%] min-w-0 flex flex-col gap-4 shrink-0 h-full">
+        {/* Monitoring notice - above camera feed */}
+        <div className="flex justify-center shrink-0">
+          <div className="glass px-4 py-2.5 rounded-xl flex items-center gap-2 text-gray-400 text-xs border border-white/20">
+            <Eye className="w-3.5 h-3.5 text-primary/80 shrink-0" />
+            <span>Speak clearly, look confident, and maintain good posture. You're being evaluated on technical depth, communication clarity, confidence, and cultural fit.</span>
+          </div>
+        </div>
 
-                <div className="z-20 text-center">
-                    <h3 className="text-xl text-slate-400 mb-2">Current Speaker</h3>
-                    <div className="text-4xl font-bold text-white tracking-tight">
-                        {activeSpeaker}
-                    </div>
-                    {isTalking && <span className="text-sm text-green-400 mt-2 block font-mono">Speaking...</span>}
+        <div className="relative flex-1 min-h-0 rounded-2xl overflow-hidden bg-black/90 shadow-2xl shadow-black/30 border border-white/20 group">
+          {/* User Video */}
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-300 ${cameraOff ? 'opacity-0' : 'opacity-100'}`}
+          />
+          {cameraOff && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-gray-400 gap-3">
+              <VideoOff className="w-16 h-16 opacity-60" />
+              <p className="text-sm font-medium">Camera off</p>
+              <p className="text-xs opacity-70">Click the camera button to turn it back on</p>
+            </div>
+          )}
+          <canvas ref={canvasRef} className="hidden" />
+
+          {/* AI Overlay / Visualizer */}
+          <div className="absolute top-6 left-6 right-6 flex justify-between items-start z-10">
+            <div className="glass px-5 py-2.5 rounded-xl flex items-center gap-2 text-gray-200 border border-white/20">
+              <div className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-primary animate-pulse' : 'bg-destructive'}`} />
+              <span className="text-sm font-medium tracking-wide">
+                {connected ? 'LIVE' : 'CONNECTING...'}
+              </span>
+              <span className="text-muted-foreground/50 px-2 mx-1">|</span>
+              <span className="font-mono text-sm">{formatTime(duration)}</span>
+            </div>
+
+            <div className="glass px-5 py-2.5 rounded-xl text-gray-200 flex items-center gap-2 border border-white/20">
+              <Activity className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">{activeSpeaker}</span>
+            </div>
+          </div>
+
+
+
+          {/* Floating Controls */}
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center z-20">
+            <div className="h-14 glass rounded-2xl px-6 flex items-center gap-5 shadow-2xl shadow-black/30 border border-white/20">
+              <button
+                type="button"
+                onClick={toggleMic}
+                title={micMuted ? 'Unmute microphone' : 'Mute microphone'}
+                className={`p-3 rounded-full transition-all ${micMuted || !micPermission ? 'bg-destructive/20 text-destructive hover:bg-destructive/30' : 'bg-white/10 hover:bg-white/20 text-gray-200'}`}
+              >
+                {micMuted || !micPermission ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
+              <button
+                type="button"
+                onClick={toggleCamera}
+                title={cameraOff ? 'Turn camera on' : 'Turn camera off'}
+                className={`p-3 rounded-full transition-all ${cameraOff || !cameraPermission ? 'bg-destructive/20 text-destructive hover:bg-destructive/30' : 'bg-white/10 hover:bg-white/20 text-gray-200'}`}
+              >
+                {cameraOff || !cameraPermission ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              </button>
+              <div className="w-px h-6 bg-border" />
+              <button
+                onClick={stopInterview}
+                className="px-6 py-2.5 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-full font-medium transition-all hover:scale-105 active:scale-95 flex items-center gap-2 shadow-lg shadow-destructive/20"
+              >
+                <PhoneOff className="w-4 h-4" />
+                <span>End Call</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right: 25% - Live transcript */}
+      <div className="w-[25%] min-w-[200px] flex flex-col shrink-0 h-full">
+        <div className="flex-1 min-h-0 glass rounded-xl border border-white/20 p-5 shadow-lg shadow-black/20 flex flex-col overflow-hidden min-w-0">
+          <div className="flex items-center gap-2 mb-4 text-gray-400 px-1">
+            <MessageSquare className="w-4 h-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Live Transcript</span>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 panel-style-textarea">
+            {transcript.length === 0 && (
+              <div className="h-full flex flex-col items-center justify-center text-center text-gray-300 space-y-3 px-4">
+                <p className="text-2xl md:text-3xl font-semibold leading-relaxed">
+                  Say hello to start the interview
+                </p>
+                <p className="text-sm text-gray-500">The panel will introduce themselves and ask the first question</p>
+              </div>
+            )}
+            {transcript.map((line, idx) => {
+              // Parse speaker|||content format
+              const [speaker, ...contentParts] = line.split('|||');
+              const content = contentParts.join('|||'); // Handle ||| in content
+              const isUser = speaker === 'You';
+
+              return (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-xl text-sm leading-relaxed max-w-full break-words ${isUser ? 'bg-primary/10 text-gray-200 ml-auto rounded-tr-sm' : 'bg-white/[0.06] text-gray-300 mr-auto rounded-tl-sm border border-white/10'}`}
+                >
+                  <span className="opacity-70 text-xs block mb-1 font-medium">{speaker}</span>
+                  <div className="whitespace-pre-wrap">{content}</div>
                 </div>
-           </div>
-
-           {/* Panelist Cards */}
-           <div className="grid grid-cols-3 gap-4">
-               {panelists.map((p) => (
-                   <div key={p.id} className={`p-4 rounded-lg border transition-all duration-300 ${activeSpeaker.includes(p.name) ? `bg-slate-800 border-${p.avatarColor}-500 shadow-[0_0_15px_rgba(59,130,246,0.3)] transform scale-105` : 'bg-slate-800/50 border-slate-700 opacity-70'}`}>
-                       <div className={`w-10 h-10 rounded-full bg-${p.avatarColor}-600 mb-3 flex items-center justify-center font-bold text-lg`}>
-                           {p.name[0]}
-                       </div>
-                       <h4 className="font-bold text-white">{p.name}</h4>
-                       <p className="text-xs text-slate-400 uppercase tracking-wider">{p.role}</p>
-                   </div>
-               ))}
-           </div>
+              );
+            })}
+            {/* Auto-scroll anchor */}
+            <div ref={transcriptEndRef} />
+          </div>
         </div>
-
-        {/* User Self-View & Transcript */}
-        <div className="flex flex-col gap-4">
-             {/* Camera View */}
-             <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-black aspect-video shadow-lg">
-                 <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover transform scale-x-[-1]" />
-                 <canvas ref={canvasRef} className="hidden" />
-                 <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-xs font-mono text-white flex items-center gap-2">
-                     <span className={`w-2 h-2 rounded-full ${micPermission ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                     Mic
-                     <span className={`w-2 h-2 rounded-full ${cameraPermission ? 'bg-green-500' : 'bg-red-500'} ml-2`}></span>
-                     Cam
-                 </div>
-             </div>
-
-             {/* Live Transcript Log */}
-             <div className="flex-grow bg-slate-800 rounded-xl border border-slate-700 p-4 overflow-hidden flex flex-col">
-                 <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase">Live Transcript</h3>
-                 <div className="flex-grow overflow-y-auto space-y-2 text-sm pr-2 scrollbar-thin">
-                     {transcript.length === 0 && <p className="text-slate-600 italic">Conversation starting...</p>}
-                     {transcript.map((line, idx) => (
-                         <div key={idx} className={`p-2 rounded ${line.startsWith('You:') ? 'bg-slate-700 ml-4' : 'bg-slate-700/50 mr-4'}`}>
-                             {line}
-                         </div>
-                     ))}
-                 </div>
-             </div>
-        </div>
-
       </div>
-    </div>
+    </motion.div>
   );
 };
