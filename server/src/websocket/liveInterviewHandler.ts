@@ -54,8 +54,8 @@ export class LiveInterviewHandler {
             }
         });
 
-        this.ws.on('close', () => {
-            this.cleanup();
+        this.ws.on('close', async () => {
+            await this.cleanup();
         });
 
         this.ws.on('error', (error) => {
@@ -90,6 +90,12 @@ export class LiveInterviewHandler {
      * Initialize interview session with Gemini Live
      */
     private async initializeSession(data: SessionData): Promise<void> {
+        // Prevent double initialization
+        if (this.geminiSession || this.orchestrator) {
+            console.log('Session already active, cleaning up before re-initializing');
+            await this.cleanup();
+        }
+
         try {
             const { candidate, panelists } = data;
 
@@ -405,11 +411,17 @@ Start by briefly acknowledging the previous speaker or topic, then ask your ques
     /**
      * Cleanup resources
      */
-    private cleanup(): void {
+    private async cleanup(): Promise<void> {
         if (this.geminiSession) {
-            // Close Gemini session if possible
+            try {
+                console.log('Cleaning up Gemini session...');
+                await this.geminiSession.close();
+            } catch (err) {
+                console.warn('Error closing Gemini session:', err);
+            }
             this.geminiSession = null;
         }
         this.orchestrator = null;
+        this.currentPanelistId = null;
     }
 }

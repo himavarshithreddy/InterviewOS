@@ -1,10 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Activity, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '@/utils/audioUtils';
 import { CandidateProfile, Panelist, AvatarColor } from '@/types';
 import { AVATAR_COLOR_CLASSES } from '@/src/constants';
+
+// Distinct voices for each panelist - Gemini Live supported voices
+const PANELIST_VOICES = ['Kore', 'Charon', 'Fenrir', 'Aoede', 'Puck'] as const;
 
 interface Props {
   candidate: CandidateProfile;
@@ -22,6 +25,7 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [currentPanelistIndex, setCurrentPanelistIndex] = useState(0);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,6 +47,14 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const lastAppendedChunksRef = useRef<string[]>([]);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
+  // Turn-taking management
+  const aiRef = useRef<GoogleGenAI | null>(null);
+  const currentPanelistRef = useRef<number>(0);
+  const isSwitchingSessionRef = useRef(false);
+  const pendingResponseRef = useRef(false);
+  const lastSpeakerChangeRef = useRef<number>(Date.now());
+  const questionCountRef = useRef<number>(0);
+
   // Timer
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -58,44 +70,139 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Initial prompt construction
-  const systemInstruction = `
-    You are a panel of three interviewers conducting a job interview for the role of: ${candidate.targetRole || 'Candidate'}.
-    The candidate's name is ${candidate.name}.
-    
-    The panel consists of:
-    1. ${panelists[0].name} (${panelists[0].role}): Focuses on ${panelists[0].focus}. ${panelists[0].description}.
-    2. ${panelists[1].name} (${panelists[1].role}): Focuses on ${panelists[1].focus}. ${panelists[1].description}.
-    3. ${panelists[2].name} (${panelists[2].role}): Focuses on ${panelists[2].focus}. ${panelists[2].description}.
+  // Generate per-panelist system instruction with conversation context
+  const generatePanelistInstruction = useCallback((panelistIndex: number, isIntro: boolean = false) => {
+    const panelist = panelists[panelistIndex];
+    const otherPanelists = panelists.filter((_, i) => i !== panelistIndex);
 
-    Candidate Context:
-    Skills: ${candidate.skills.join(', ')}
-    Experience: ${candidate.experience.slice(0, 3).join('; ')}...
+    // Build conversation context from recent transcript (last 6 exchanges)
+    const recentTranscript = transcriptLinesRef.current.slice(-6);
+    let conversationContext = '';
+    if (recentTranscript.length > 0 && !isIntro) {
+      const formattedTranscript = recentTranscript.map(line => {
+        const [speaker, content] = line.split('|||');
+        return `${speaker}: ${content}`;
+      }).join('\n');
 
-    CRITICAL FORMATTING RULES:
-    - ALWAYS start EVERY response with [YourName]: before speaking
-    - Example: "[${panelists[0].name}]: Hello, welcome to the interview."
-    - NEVER speak without this exact prefix format
-    - Only ONE panelist speaks at a time - never overlap voices
-    
-    Interview Guidelines:
-    - You must act as ONE of these personas at a time
-    - Start by having ONE panelist introduce the panel and ask the first question
-    - Be concise - this is a live video interview
-    - Pause naturally between speakers - do not rush
-    - Observe the candidate via video and comment on demeanor if relevant
-    - Pass the conversation between panelists naturally
-    - If the candidate struggles, offer a hint
-    - Keep questions relevant to the ${candidate.targetRole} position
-  `;
+      conversationContext = `
+RECENT CONVERSATION (build on this, don't repeat questions already asked):
+${formattedTranscript}
+`;
+    }
 
-  // Start Session
+    return `
+You are ${panelist.name}, a ${panelist.role} conducting a job interview.
+Your focus area: ${panelist.focus}
+Your personality: ${panelist.description}
+
+INTERVIEW CONTEXT:
+- Candidate: ${candidate.name}
+- Role: ${candidate.targetRole || 'Software Developer'}
+- Skills: ${candidate.skills.slice(0, 5).join(', ')}
+- Experience: ${candidate.experience.slice(0, 2).join('; ')}
+
+OTHER PANEL MEMBERS (for context, but YOU speak alone):
+${otherPanelists.map(p => `- ${p.name} (${p.role}): ${p.focus}`).join('\n')}
+${conversationContext}
+CRITICAL RULES:
+1. You are ONLY ${panelist.name} - never speak as anyone else
+2. Keep responses concise (2-3 sentences max for questions)
+3. Focus ONLY on your area: ${panelist.focus}
+4. ${isIntro
+        ? 'Briefly introduce yourself (name and role only), then ask your first question'
+        : 'Reference what was just discussed if relevant, then ask your follow-up question in your area'}
+5. Be conversational and natural - this is a live video call
+6. DO NOT repeat questions that were already asked in the conversation
+7. Build on the candidate's previous answers when asking follow-ups
+
+${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist.role}. [Your question]"` : ''}
+    `.trim();
+  }, [candidate, panelists]);
+
+  // Switch to a different panelist session
+  const switchToPanelist = useCallback(async (panelistIndex: number, isIntro: boolean = false) => {
+    if (isSwitchingSessionRef.current) {
+      console.log('Already switching session, skipping...');
+      return;
+    }
+
+    if (!aiRef.current) {
+      console.error('AI not initialized');
+      return;
+    }
+
+    isSwitchingSessionRef.current = true;
+
+    try {
+      // Close existing session gracefully
+      if (sessionRef.current) {
+        console.log('Closing previous session...');
+        try {
+          await sessionRef.current.close();
+        } catch (e) {
+          console.warn('Error closing session:', e);
+        }
+        sessionRef.current = null;
+
+        // Brief pause for clean handoff
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      const panelist = panelists[panelistIndex];
+      const voice = PANELIST_VOICES[panelistIndex % PANELIST_VOICES.length];
+      const instruction = generatePanelistInstruction(panelistIndex, isIntro);
+
+      console.log(`Switching to panelist: ${panelist.name} with voice: ${voice}`);
+
+      currentPanelistRef.current = panelistIndex;
+      setCurrentPanelistIndex(panelistIndex);
+      setActiveSpeaker(panelist.name);
+
+      const session = await aiRef.current.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        config: {
+          systemInstruction: instruction,
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }
+          }
+        },
+        callbacks: {
+          onopen: () => {
+            console.log(`${panelist.name} session connected`);
+          },
+          onmessage: async (message: LiveServerMessage) => {
+            handleLiveMessage(message, panelist.name);
+          },
+          onclose: () => {
+            console.log(`${panelist.name} session closed`);
+          },
+          onerror: (err) => {
+            console.error(`${panelist.name} session error:`, err);
+          }
+        }
+      });
+
+      sessionRef.current = session;
+      lastSpeakerChangeRef.current = Date.now();
+
+    } catch (error) {
+      console.error('Failed to switch panelist:', error);
+    } finally {
+      isSwitchingSessionRef.current = false;
+    }
+  }, [panelists, generatePanelistInstruction]);
+
+  // Start Session - initialize with first panelist
   const startSession = async () => {
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
       if (!apiKey) throw new Error("VITE_GEMINI_API_KEY is not set in environment");
 
       const ai = new GoogleGenAI({ apiKey });
+      aiRef.current = ai;
 
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       audioContextRef.current = audioCtx;
@@ -103,42 +210,19 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       inputContextRef.current = inputCtx;
 
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          systemInstruction: systemInstruction,
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
-          }
-        },
-        callbacks: {
-          onopen: () => {
-            setConnected(true);
-            console.log("Gemini Live Session Connected");
-            startMediaStreaming(sessionPromise);
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            handleLiveMessage(message);
-          },
-          onclose: () => {
-            console.log("Session closed");
-            setConnected(false);
-          },
-          onerror: (err) => {
-            console.error("Session error", err);
-          }
-        }
-      });
+      // Start with first panelist using switchToPanelist
+      await switchToPanelist(0, true);
+      setConnected(true);
+
+      // Start media streaming after session is ready
+      await startMediaStreaming();
 
     } catch (e) {
       console.error("Failed to start session:", e);
     }
   };
 
-  const startMediaStreaming = async (sessionPromise: Promise<any>) => {
+  const startMediaStreaming = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       streamRef.current = stream;
@@ -159,10 +243,10 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
         const inputData = e.inputBuffer.getChannelData(0);
         const pcmBlob = createPcmBlob(inputData, 16000);
 
-        sessionPromise.then(session => {
-          sessionRef.current = session;
-          session.sendRealtimeInput({ media: pcmBlob });
-        });
+        // Use current session directly from ref
+        if (sessionRef.current) {
+          sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+        }
       };
 
       source.connect(processor);
@@ -183,9 +267,10 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
         ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
         const base64 = canvasRef.current.toDataURL('image/jpeg', 0.5).split(',')[1];
 
-        sessionPromise.then(session => {
-          session.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
-        });
+        // Use current session directly from ref
+        if (sessionRef.current) {
+          sessionRef.current.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
+        }
       }, 1000);
 
     } catch (err) {
@@ -222,8 +307,28 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
       source.onended = () => {
         currentSourceRef.current = null;
         isPlayingAudioRef.current = false;
-        if (audioCtx.currentTime >= nextStartTimeRef.current - 0.1) setIsTalking(false);
-        if (!interruptedRef.current && audioQueueRef.current.length > 0) {
+
+        // Check if all audio in queue is done
+        if (audioQueueRef.current.length === 0) {
+          setIsTalking(false);
+
+          // Increment question count and check for panelist rotation
+          questionCountRef.current += 1;
+
+          // Rotate panelists every 2-3 questions for natural conversation
+          // Also ensure minimum 5 seconds between switches
+          const timeSinceLastSwitch = Date.now() - lastSpeakerChangeRef.current;
+          if (questionCountRef.current >= 2 && timeSinceLastSwitch > 5000) {
+            questionCountRef.current = 0;
+            const nextIndex = (currentPanelistRef.current + 1) % panelists.length;
+
+            // Schedule switch with a brief pause for natural handoff
+            setTimeout(() => {
+              switchToPanelist(nextIndex, false);
+            }, 800);
+          }
+        } else {
+          // More audio chunks to play
           processAudioQueue();
         }
       };
@@ -234,22 +339,21 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
     }
   };
 
-  const handleLiveMessage = async (message: LiveServerMessage) => {
+  // Handle messages from Gemini Live with known panelist name
+  const handleLiveMessage = async (message: LiveServerMessage, panelistName?: string) => {
     const audioCtx = audioContextRef.current;
     if (!audioCtx) return;
 
     if (message.serverContent?.outputTranscription) {
       const text = message.serverContent.outputTranscription.text?.trim();
       if (text) {
-        // Extract speaker name from [Name]: prefix
+        // Use provided panelist name (from session) or extract from text prefix
         const match = text.match(/^\[([^\]]+)\]:?\s*/);
-        const speaker = match?.[1]?.trim() || 'Panel';
+        const speaker = panelistName || match?.[1]?.trim() || panelists[currentPanelistRef.current]?.name || 'Panel';
         const content = text.replace(/^\[[^\]]+\]:?\s*/, '').trim();
 
-        // Update active speaker indicator
-        if (match?.[1]) {
-          setActiveSpeaker(speaker);
-        }
+        // Update active speaker indicator to the known panelist
+        setActiveSpeaker(speaker);
 
         // Check if this is a continuation of the current speaker
         if (currentLineRef.current?.speaker === speaker) {
