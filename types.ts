@@ -19,6 +19,7 @@ export interface CandidateProfile {
   education: string[];
   rawResumeText: string;
   targetRole?: string;
+  difficulty?: 'Easy' | 'Medium' | 'Hard' | 'Extreme';
   /** Preview-only: current/most recent job title */
   jobTitle?: string;
   /** Preview-only: 1-2 sentence professional summary */

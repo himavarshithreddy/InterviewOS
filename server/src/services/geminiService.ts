@@ -188,10 +188,20 @@ Use empty strings/arrays for missing sections. Be concise.`;
     /**
      * Generate 3 interviewer personas
      */
-    async generatePanelists(jobRole: string, resumeSummary: string): Promise<Panelist[]> {
+    async generatePanelists(jobRole: string, resumeSummary: string, difficulty: string = 'Medium'): Promise<Panelist[]> {
         return this.retryWithBackoff(async () => {
+            const difficultyPrompts: Record<string, string> = {
+                'Easy': 'Friendly, encouraging, and forgiving. Focus on basics and potential. "Good cop" vibes.',
+                'Medium': 'Professional, standard corporate interview style. Balanced strictly.',
+                'Hard': 'Strict, probing, and detail-oriented. Catches inconsistencies. High bar.',
+                'Extreme': 'Intimidating, ruthless, and skeptical. Focus on edge cases and stress testing. Zero tolerance for fluff.'
+            };
+            const style = difficultyPrompts[difficulty] || difficultyPrompts['Medium'];
+
             const prompt = `
         Create 3 distinct interviewer personas for a panel interview for the job role of: "${jobRole}".
+        INTERVIEW DIFFICULTY: ${difficulty.toUpperCase()}
+        TONE/STYLE: ${style}
         
         Candidate Resume Summary: 
         ${resumeSummary.slice(0, 2000)}...
@@ -205,7 +215,7 @@ Use empty strings/arrays for missing sections. Be concise.`;
         - Name (simple first + last name. Include 1–2 Indian names in the panel, e.g., Raj Kumar, Priya Sharma; others can be global, e.g., Alex Chen, Sarah Kim. Keep all names short and easy to remember.)
         - Role (e.g., Senior Engineer, Product Director, HR Business Partner)
         - Focus (Short label, e.g., "System Design", "Product Strategy")
-        - Description (Specific questioning style and personality traits. e.g., "Asks grilling questions about security" or "Friendly but probes on conflict resolution")
+        - Description (Specific questioning style and personality traits matching the ${difficulty} difficulty. e.g., "${style}")
         - AvatarColor (Pick one: "blue", "green", "pink", "purple", "orange", "red")
 
         Return a JSON array of 3 objects.

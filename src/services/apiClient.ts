@@ -129,11 +129,11 @@ class ApiClient {
     /**
      * Generate interviewer panelists
      */
-    async generatePanelists(targetRole: string, resumeText: string): Promise<Panelist[]> {
+    async generatePanelists(targetRole: string, resumeText: string, difficulty: string = 'Medium'): Promise<Panelist[]> {
         return this.retryWithBackoff(async () => {
             const response = await this.client.post<Panelist[]>(
                 API_ENDPOINTS.GENERATE_PANELISTS,
-                { targetRole, resumeText }
+                { targetRole, resumeText, difficulty }
             );
 
             return response.data;

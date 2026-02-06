@@ -70,7 +70,13 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Generate per-panelist system instruction with conversation context
+  // Refs for tracking context
+  const candidateIntroRef = useRef<string>("");
+  const handOffTargetRef = useRef<string | null>(null);
+
+
+  // ... (inside handleLiveMessage)
+
   const generatePanelistInstruction = useCallback((panelistIndex: number, isIntro: boolean = false) => {
     const panelist = panelists[panelistIndex];
     const otherPanelists = panelists.filter((_, i) => i !== panelistIndex);
@@ -78,6 +84,12 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
     // Build conversation context from recent transcript (last 6 exchanges)
     const recentTranscript = transcriptLinesRef.current.slice(-6);
     let conversationContext = '';
+
+    // Always include candidate introduction in context if available
+    const introContext = candidateIntroRef.current
+      ? `\nCANDIDATE INTRODUCTION (Reference this):\n"${candidateIntroRef.current}"\n`
+      : '';
+
     if (recentTranscript.length > 0 && !isIntro) {
       const formattedTranscript = recentTranscript.map(line => {
         const [speaker, content] = line.split('|||');
@@ -100,6 +112,7 @@ INTERVIEW CONTEXT:
 - Role: ${candidate.targetRole || 'Software Developer'}
 - Skills: ${candidate.skills.slice(0, 5).join(', ')}
 - Experience: ${candidate.experience.slice(0, 2).join('; ')}
+${introContext}
 
 OTHER PANEL MEMBERS (for context, but YOU speak alone):
 ${otherPanelists.map(p => `- ${p.name} (${p.role}): ${p.focus}`).join('\n')}
@@ -109,13 +122,16 @@ CRITICAL RULES:
 2. Keep responses concise (2-3 sentences max for questions)
 3. Focus ONLY on your area: ${panelist.focus}
 4. ${isIntro
-        ? 'Briefly introduce yourself (name and role only), then ask your first question'
-        : 'Reference what was just discussed if relevant, then ask your follow-up question in your area'}
+        ? 'Start with a warm, welcoming greeting. Then ask a high-level "icebreaker" question about their background to make them comfortable. Do NOT dive deep yet.'
+        : 'Start with a high-level conceptual question in your focus area. detailed follow-ups ONLY if they answer well. Start slow, then go deep.'}
 5. Be conversational and natural - this is a live video call
 6. DO NOT repeat questions that were already asked in the conversation
 7. Build on the candidate's previous answers when asking follow-ups
+8. DYNAMIC HANDOFF: If you feel the candidate's answer is better suited for another panelist, OR if you have asked 2-3 questions and want to pass the floor, end your response with: "[PASS: Name]" replacing Name with the target panelist.
+   - Example: "That's a great point about team culture. [PASS: ${otherPanelists[0]?.name || 'Next'}]"
+   - Example: "I think Alex would be interested in your backend work. [PASS: Alex]"
 
-${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist.role}. [Your question]"` : ''}
+${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, ${panelist.role}. To start us off, could you tell us a little about yourself and your journey?"` : ''}
     `.trim();
   }, [candidate, panelists]);
 
@@ -224,7 +240,16 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist
 
   const startMediaStreaming = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          autoGainControl: true,
+          noiseSuppression: true
+        },
+        video: true
+      });
       streamRef.current = stream;
       setMicPermission(true);
       setCameraPermission(true);
@@ -236,7 +261,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist
       // 1. Audio Streaming
       const inputCtx = inputContextRef.current!;
       const source = inputCtx.createMediaStreamSource(stream);
-      const processor = inputCtx.createScriptProcessor(4096, 1, 1);
+      // Reduce buffer size to 2048 for lower latency (~128ms)
+      const processor = inputCtx.createScriptProcessor(2048, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
@@ -298,6 +324,9 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist
       const source = audioCtx.createBufferSource();
       source.buffer = audioBuffer;
       currentSourceRef.current = source;
+
+      // Connect to destination (via gain node if we stored it, filtering out pops)
+      // For now connect to destination, but we should use a gain node for smoothing
       source.connect(audioCtx.destination);
 
       const startTime = Math.max(audioCtx.currentTime, nextStartTimeRef.current);
@@ -349,8 +378,19 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist
       if (text) {
         // Use provided panelist name (from session) or extract from text prefix
         const match = text.match(/^\[([^\]]+)\]:?\s*/);
-        const speaker = panelistName || match?.[1]?.trim() || panelists[currentPanelistRef.current]?.name || 'Panel';
-        const content = text.replace(/^\[[^\]]+\]:?\s*/, '').trim();
+        let speaker = panelistName || match?.[1]?.trim() || panelists[currentPanelistRef.current]?.name || 'Panel';
+        let content = text.replace(/^\[[^\]]+\]:?\s*/, '').trim();
+
+        // Check for dynamic handoff token [PASS: Name]
+        const passMatch = content.match(/\[PASS:\s*([^\]]+)\]/i);
+        if (passMatch) {
+          const targetName = passMatch[1].trim();
+          if (!handOffTargetRef.current) {
+            handOffTargetRef.current = targetName;
+          }
+          // Remove the token from display text
+          content = content.replace(/\[PASS:\s*[^\]]+\]/gi, '').trim();
+        }
 
         // Update active speaker indicator to the known panelist
         setActiveSpeaker(speaker);
@@ -412,6 +452,11 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist
           } else {
             // New speaker - save previous and start new
             if (currentLineRef.current) {
+              // Capture intro if it's the first candidate response and long enough (and haven't captured it yet)
+              if (currentLineRef.current.speaker === 'You' && !candidateIntroRef.current && currentLineRef.current.content.length > 20) {
+                candidateIntroRef.current = currentLineRef.current.content;
+              }
+
               transcriptLinesRef.current.push(
                 `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
               );
@@ -424,9 +469,17 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, I'm ${panelist.name}, ${panelist
             ...transcriptLinesRef.current,
             currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
           ].filter(Boolean);
-          setTranscript(newTranscript);
-          // Auto-scroll to bottom
-          setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+
+          // Only trigger re-render if content length changed by >5 chars or it's a new line
+          // This prevents flickering on every single character update
+          const prevLen = transcript.join('').length;
+          const newLen = newTranscript.join('').length;
+
+          if (newTranscript.length !== transcript.length || Math.abs(newLen - prevLen) > 5) {
+            setTranscript(newTranscript);
+            // Auto-scroll to bottom
+            setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+          }
         }
       }
     }

@@ -71,7 +71,8 @@ function App() {
         try {
             const generatedPanelists = await apiClient.generatePanelists(
                 profile.targetRole || 'General',
-                profile.rawResumeText
+                profile.rawResumeText,
+                profile.difficulty || 'Medium'
             );
             setPanelists(generatedPanelists);
             sessionStorage.savePanelists(generatedPanelists);

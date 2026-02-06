@@ -75,13 +75,13 @@ app.post('/api/parse-resume', upload.single('resume'), async (req: Request, res:
  */
 app.post('/api/generate-panelists', async (req: Request, res: Response) => {
     try {
-        const { targetRole, resumeText } = req.body;
+        const { targetRole, resumeText, difficulty } = req.body;
 
         if (!targetRole || !resumeText) {
             return res.status(400).json({ error: 'Target role and resume text are required' });
         }
 
-        const panelists = await geminiService.generatePanelists(targetRole, resumeText);
+        const panelists = await geminiService.generatePanelists(targetRole, resumeText, difficulty);
 
         res.json(panelists);
     } catch (error: any) {

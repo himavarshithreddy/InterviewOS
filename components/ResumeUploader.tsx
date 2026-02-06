@@ -12,6 +12,7 @@ interface Props {
 export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
   const [error, setError] = useState<string | null>(null);
   const [targetRole, setTargetRole] = useState('');
+  const [difficulty, setDifficulty] = useState<'Easy' | 'Medium' | 'Hard' | 'Extreme'>('Medium');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [parsedProfile, setParsedProfile] = useState<CandidateProfile | null>(null);
@@ -109,7 +110,7 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
 
   const handleProceed = () => {
     if (!parsedProfile || parsedProfile.isResume === false) return;
-    onUploadComplete(parsedProfile);
+    onUploadComplete({ ...parsedProfile, difficulty });
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -151,9 +152,8 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`rounded-xl px-8 py-6 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center ${
-                isDragging ? 'scale-[1.02]' : ''
-              }`}
+              className={`rounded-xl px-8 py-6 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center ${isDragging ? 'scale-[1.02]' : ''
+                }`}
               style={{
                 backgroundColor: isDragging ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.05)',
                 minHeight: '140px',
@@ -220,6 +220,32 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
             />
           </div>
 
+          <div className="px-6 md:px-8 flex flex-col gap-4">
+            <label className="block text-sm font-medium uppercase tracking-[0.2em] text-primary/80">
+              Interview Difficulty
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {(['Easy', 'Medium', 'Hard', 'Extreme'] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setDifficulty(level)}
+                  className={`px-3 py-3 rounded-xl border text-sm font-medium transition-all ${difficulty === level
+                    ? 'bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(255,255,255,0.1)]'
+                    : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-gray-200'
+                    }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground px-1">
+              {difficulty === 'Easy' && 'Friendly & guiding. Good for beginners.'}
+              {difficulty === 'Medium' && 'Standard professional interview. Balanced.'}
+              {difficulty === 'Hard' && 'Strict & probing. Expects detailed answers.'}
+              {difficulty === 'Extreme' && 'Intimidating & zero fluff. Edge cases only.'}
+            </p>
+          </div>
+
           {error && (
             <div className="px-6 md:px-8">
               <div className="bg-destructive/10 rounded-xl p-4 text-destructive text-sm">
@@ -232,9 +258,8 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
             <button
               onClick={handleParseResume}
               disabled={!canParse}
-              className={`w-full inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer ${
-                !canParse ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
-              }`}
+              className={`w-full inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer ${!canParse ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
+                }`}
             >
               {previewLoading ? (
                 <>
@@ -251,9 +276,8 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
             <button
               onClick={handleProceed}
               disabled={!canProceed}
-              className={`w-full inline-flex items-center justify-center gap-2 bg-primary/80 text-primary-foreground shadow-lg hover:bg-primary/70 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer border border-primary/50 ${
-                !canProceed ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
-              }`}
+              className={`w-full inline-flex items-center justify-center gap-2 bg-primary/80 text-primary-foreground shadow-lg hover:bg-primary/70 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer border border-primary/50 ${!canProceed ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
+                }`}
             >
               Proceed
             </button>
