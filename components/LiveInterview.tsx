@@ -127,9 +127,11 @@ CRITICAL RULES:
 5. Be conversational and natural - this is a live video call
 6. DO NOT repeat questions that were already asked in the conversation
 7. Build on the candidate's previous answers when asking follow-ups
-8. DYNAMIC HANDOFF: If you feel the candidate's answer is better suited for another panelist, OR if you have asked 2-3 questions and want to pass the floor, end your response with: "[PASS: Name]" replacing Name with the target panelist.
-   - Example: "That's a great point about team culture. [PASS: ${otherPanelists[0]?.name || 'Next'}]"
-   - Example: "I think Alex would be interested in your backend work. [PASS: Alex]"
+8. DYNAMIC HANDOFF: When passing to another panelist, say a natural transition phrase, then SILENTLY append the handoff tag at the very end. DO NOT speak the brackets or the word PASS aloud - it is silent metadata.
+   - CORRECT: "That's a great point about team culture. I think Priya would love to hear more about that." (then silently append: [PASS: Priya])
+   - CORRECT: "Fascinating! Alex, what do you think?" (then silently append: [PASS: Alex])
+   - WRONG: "That's great. [PASS: Priya Sharma]" (DO NOT say "pass" or brackets!)
+   - The tag format is: [PASS: ExactPanelistFirstName] - use ONLY the first name, not full name.
 
 ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, ${panelist.role}. To start us off, could you tell us a little about yourself and your journey?"` : ''}
     `.trim();
@@ -182,7 +184,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
+            languageCode: 'en-US'
           }
         },
         callbacks: {
@@ -261,8 +264,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       // 1. Audio Streaming
       const inputCtx = inputContextRef.current!;
       const source = inputCtx.createMediaStreamSource(stream);
-      // Reduce buffer size to 2048 for lower latency (~128ms)
-      const processor = inputCtx.createScriptProcessor(2048, 1, 1);
+      // Reduce buffer size to 1024 for lower latency (~64ms per chunk)
+      const processor = inputCtx.createScriptProcessor(1024, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
@@ -344,7 +347,30 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           // Increment question count and check for panelist rotation
           questionCountRef.current += 1;
 
-          // Rotate panelists every 2-3 questions for natural conversation
+          // PRIORITY 1: Check for AI-driven dynamic handoff first
+          if (handOffTargetRef.current) {
+            console.log(`Executing dynamic handoff to: ${handOffTargetRef.current}`);
+            const targetName = handOffTargetRef.current.toLowerCase();
+            handOffTargetRef.current = null; // Clear it
+
+            // Try exact match first, then first-name match
+            let nextIndex = panelists.findIndex(p => p.name.toLowerCase() === targetName);
+            if (nextIndex === -1) {
+              // Try matching just the first name
+              nextIndex = panelists.findIndex(p => p.name.toLowerCase().startsWith(targetName) || targetName.includes(p.name.split(' ')[0].toLowerCase()));
+            }
+
+            if (nextIndex !== -1 && nextIndex !== currentPanelistRef.current) {
+              console.log(`Switching to panelist: ${panelists[nextIndex].name}`);
+              questionCountRef.current = 0;
+              setTimeout(() => switchToPanelist(nextIndex, false), 500);
+              return;
+            } else {
+              console.log(`Could not find panelist matching: ${targetName}`);
+            }
+          }
+
+          // PRIORITY 2: Fallback rotation after 2-3 questions
           // Also ensure minimum 5 seconds between switches
           const timeSinceLastSwitch = Date.now() - lastSpeakerChangeRef.current;
           if (questionCountRef.current >= 2 && timeSinceLastSwitch > 5000) {
@@ -373,6 +399,47 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     const audioCtx = audioContextRef.current;
     if (!audioCtx) return;
 
+    // Handle USER's speech (inputTranscription) - what the user is saying
+    if (message.serverContent?.inputTranscription) {
+      // Use RAW text with spaces preserved - Gemini sends " word" with leading space for new words
+      const rawText = message.serverContent.inputTranscription.text || '';
+      const timestamp = new Date().toISOString().split('T')[1];
+      console.log(`[${timestamp}] INPUT_TRANSCRIPTION: "${rawText}"`);
+
+      if (rawText.length > 0) {
+        // Finalize any current AI line first
+        if (currentLineRef.current && currentLineRef.current.speaker !== 'You') {
+          transcriptLinesRef.current.push(
+            `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`
+          );
+          currentLineRef.current = null;
+        }
+
+        // Simply concatenate - Gemini sends fragments with proper spacing
+        if (currentLineRef.current?.speaker === 'You') {
+          currentLineRef.current.content += rawText;
+        } else {
+          // Start a new user line
+          currentLineRef.current = { speaker: 'You', content: rawText.trimStart(), prefix: '' };
+        }
+
+        // Capture first substantial user response as their introduction
+        if (!candidateIntroRef.current && currentLineRef.current.content.length > 50) {
+          candidateIntroRef.current = currentLineRef.current.content;
+        }
+
+        // Update transcript immediately for live feel
+        const newTranscript = [
+          ...transcriptLinesRef.current,
+          currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
+        ].filter(Boolean);
+
+        setTranscript(newTranscript);
+        transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+
+    // Handle AI's speech (outputTranscription) - what the panelist is saying
     if (message.serverContent?.outputTranscription) {
       const text = message.serverContent.outputTranscription.text?.trim();
       if (text) {
