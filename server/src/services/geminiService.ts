@@ -253,6 +253,9 @@ Use empty strings/arrays for missing sections. Be concise.`;
 
             const rawPanelists = JSON.parse(text) as (Panelist & { gender: string })[];
 
+            console.log('--- GENERATING PANELISTS ---');
+            console.log('Raw Panelists from Gemini:', JSON.stringify(rawPanelists.map(p => ({ name: p.name, gender: p.gender })), null, 2));
+
             // Voice assignment pools
             const maleVoices = ['Puck', 'Charon', 'Fenrir'];
             const femaleVoices = ['Kore', 'Aoede'];
@@ -262,10 +265,13 @@ Use empty strings/arrays for missing sections. Be concise.`;
             let femaleVoiceIndex = 0;
 
             // Ensure IDs are unique and valid, and assign voices based on gender
-            return rawPanelists.map((p, i) => {
+            const finalPanelists = rawPanelists.map((p, i) => {
                 let voiceName = 'Puck'; // Default fallback
 
-                if (p.gender === 'Female') {
+                // Normalizing gender check to be safe
+                const genderNormalized = p.gender?.trim().toLowerCase();
+
+                if (genderNormalized === 'female') {
                     voiceName = femaleVoices[femaleVoiceIndex % femaleVoices.length];
                     femaleVoiceIndex++;
                 } else {
@@ -273,12 +279,16 @@ Use empty strings/arrays for missing sections. Be concise.`;
                     maleVoiceIndex++;
                 }
 
+                console.log(`Assigning voice: ${p.name} (${p.gender}) -> ${voiceName}`);
+
                 return {
                     ...p,
                     id: (i + 1).toString(),
                     voiceName: voiceName
                 };
             });
+
+            return finalPanelists;
         });
     }
 
