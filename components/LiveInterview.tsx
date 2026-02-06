@@ -53,6 +53,13 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const lastAppendedChunksRef = useRef<string[]>([]);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
+  // Phase 3: Parallel audio processing - pre-decode next chunk
+  const preDecodedBufferRef = useRef<AudioBuffer | null>(null);
+
+  // Phase 2: Batched transcript updates
+  const pendingTranscriptUpdateRef = useRef<string[] | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+
   // Turn-taking management
   const aiRef = useRef<GoogleGenAI | null>(null);
   const currentPanelistRef = useRef<number>(0);
@@ -64,6 +71,8 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   // Orchestration WebSocket
   const orchestrationWsRef = useRef<WebSocket | null>(null);
   const [orchestrationHint, setOrchestrationHint] = useState<any>(null);
+  const lastOrchestrationUpdateRef = useRef<number>(0);
+  const ORCHESTRATION_THROTTLE_MS = 2000; // Throttle updates to every 2 seconds
 
   // Latency metrics (DEV instrumentation)
   const currentTurnIdRef = useRef<number>(0);
@@ -241,8 +250,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         }
         sessionRef.current = null;
 
-        // Brief pause for clean handoff
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Brief pause for clean handoff (optimized from 300ms to 100ms)
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       const panelist = panelists[panelistIndex];
@@ -265,7 +274,13 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
             languageCode: 'en-US'
+          },
+          // Low-latency optimizations
+          generationConfig: {
+            responseLogprobs: false,  // Disable logprobs for speed
+            candidateCount: 1,         // Single response only
           }
+          // Note: lowLatencyMode not yet available in current SDK version
         },
         callbacks: {
           onopen: () => {
@@ -362,15 +377,24 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     orchestrationWsRef.current = ws;
   };
 
-  // Send transcript update to orchestration server
+  // Send transcript update to orchestration server (throttled for performance)
   const sendTranscriptUpdate = useCallback((speaker: 'user' | 'ai', text: string, panelistName?: string) => {
+    const now = Date.now();
+
+    // Throttle updates to reduce network overhead
+    if (now - lastOrchestrationUpdateRef.current < ORCHESTRATION_THROTTLE_MS) {
+      return; // Skip this update
+    }
+
+    lastOrchestrationUpdateRef.current = now;
+
     if (orchestrationWsRef.current?.readyState === WebSocket.OPEN) {
       orchestrationWsRef.current.send(JSON.stringify({
         type: 'transcript_update',
         data: {
           speaker,
           text,
-          timestamp: Date.now(),
+          timestamp: now,
           panelistName
         }
       }));
@@ -435,7 +459,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         console.error('Failed to load audio worklet, falling back to ScriptProcessor:', err);
         // Fallback to ScriptProcessor if Worklet fails
         const source = inputCtx.createMediaStreamSource(stream);
-        const processor = inputCtx.createScriptProcessor(1024, 1, 1);
+        // Phase 2: Reduced buffer size from 1024 to 512 for lower latency
+        const processor = inputCtx.createScriptProcessor(512, 1, 1);
         processorRef.current = processor;
 
         processor.onaudioprocess = (e) => {
@@ -469,7 +494,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         if (sessionRef.current) {
           sessionRef.current.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
         }
-      }, 1000);
+      }, 2000); // Phase 3: Increased from 1000ms to 2000ms to reduce overhead
 
     } catch (err) {
       console.error("Error accessing media devices:", err);
@@ -481,6 +506,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     if (!audioCtx || audioQueueRef.current.length === 0) return;
     if (interruptedRef.current) {
       audioQueueRef.current = [];
+      preDecodedBufferRef.current = null;
       return;
     }
     // Strict sequential playback - never start next until current ends
@@ -490,8 +516,26 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     const audioData = audioQueueRef.current.shift()!;
 
     try {
-      const audioBuffer = await decodeAudioData(base64ToUint8Array(audioData), audioCtx, 24000);
+      // Phase 3: Use pre-decoded buffer if available, otherwise decode now
+      let audioBuffer: AudioBuffer;
+      if (preDecodedBufferRef.current) {
+        audioBuffer = preDecodedBufferRef.current;
+        preDecodedBufferRef.current = null;
+      } else {
+        audioBuffer = await decodeAudioData(base64ToUint8Array(audioData), audioCtx, 24000);
+      }
+
       if (interruptedRef.current) return;
+
+      // Phase 3: Start pre-decoding next chunk while current plays
+      if (audioQueueRef.current.length > 0 && !interruptedRef.current) {
+        const nextAudioData = audioQueueRef.current[0];
+        decodeAudioData(base64ToUint8Array(nextAudioData), audioCtx, 24000)
+          .then(buffer => {
+            preDecodedBufferRef.current = buffer;
+          })
+          .catch(err => console.warn('Pre-decode failed:', err));
+      }
 
       const source = audioCtx.createBufferSource();
       source.buffer = audioBuffer;
@@ -624,14 +668,25 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           currentLineRef.current = { speaker, content, prefix: '' };
         }
 
-        // Update transcript display
+        // Phase 2: Batch transcript updates using requestAnimationFrame
         const newTranscript = [
           ...transcriptLinesRef.current,
           currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
         ].filter(Boolean);
-        setTranscript(newTranscript);
-        // Auto-scroll to bottom
-        setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+
+        pendingTranscriptUpdateRef.current = newTranscript;
+
+        if (rafIdRef.current === null) {
+          rafIdRef.current = requestAnimationFrame(() => {
+            if (pendingTranscriptUpdateRef.current) {
+              setTranscript(pendingTranscriptUpdateRef.current);
+              pendingTranscriptUpdateRef.current = null;
+              // Auto-scroll to bottom
+              setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }
+            rafIdRef.current = null;
+          });
+        }
 
         // Latency: record first transcript token timing for this turn
         const now = performance.now();
