@@ -100,39 +100,32 @@ export class PresentationCoach {
     /**
      * Analyze body language from video frame
      */
-    async analyzeBodyLanguage(videoFrame: string): Promise<BodyLanguageAnalysis> {
+    async analyzeBodyLanguage(videoData: string): Promise<BodyLanguageAnalysis> {
         try {
             const prompt = `
-You are a professional presentation coach analyzing body language during an interview.
+You are a professional presentation coach analyzing body language from a video clip of an interview.
+Identify dynamic behaviors, movement patterns, and posture shifts.
 
-Analyze this video frame and provide detailed feedback on:
+1. POSTURE STABILITY (0-1):
+   - Is posture stable or shifting?
+   - Any slouching or leaning over time?
 
-1. POSTURE (0-1 score):
-   - Are they sitting up straight?
-   - Shoulders back or slouching?
-   - Leaning forward (engaged) or backward (disengaged)?
-   - Issues and recommendation
+2. EYE CONTACT CONSISTENCY (0-1):
+   - % of time looking at camera vs looking away.
+   - Do they look away when thinking?
 
-2. EYE CONTACT (0-1 score):
-   - Looking at camera (good) or away (bad)?
-   - Estimate % of time with eye contact
-   - Issues and recommendation
+3. GESTURE DYNAMICS (0-1):
+   - Frequency: none, minimal, appropriate, excessive.
+   - Fluidity: Are gestures smooth and natural or jerky and nervous?
+   - Types: pointing, open palms, fidgeting (touching face/hair), hand wringing.
 
-3. HAND GESTURES (0-1 score):
-   - Frequency: none, minimal, appropriate, excessive
-   - Types: pointing, open palms, fidgeting, hands hidden, etc.
-   - Issues and recommendation
+4. FACIAL VARIETY (0-1):
+   - How much does expression change? (Monotone face vs expressive).
 
-4. FACIAL EXPRESSION (0-1 score):
-   - Primary expression: neutral, smiling, frowning, etc.
-   - Variety (0-1): How expressive are they?
-   - Issues and recommendation
-
-5. OVERALL ASSESSMENT:
-   - Overall score (0-100)
-   - Grade (A/B/C/D/F)
-   - 2-3 specific strengths
-   - 2-3 specific improvements
+5. OVERALL IMPRESSION:
+   - Score (0-100) & Grade.
+   - Strengths (focus on habits).
+   - Improvements (focus on habits).
 
 Format as JSON with these exact fields:
 {
@@ -152,7 +145,7 @@ Format as JSON with these exact fields:
                 contents: {
                     parts: [
                         { text: prompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: videoFrame } }
+                        { inlineData: { mimeType: 'video/mp4', data: videoData } }
                     ]
                 }
             });

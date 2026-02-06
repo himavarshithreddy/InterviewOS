@@ -117,23 +117,30 @@ Format your response as JSON.
     /**
      * Analyze emotion from video frame
      */
-    async analyzeVideo(videoFrame: string, transcript: string): Promise<EmotionAnalysis> {
+    async analyzeVideo(videoData: string, transcript: string): Promise<EmotionAnalysis> {
         try {
             const prompt = `
-Analyze the emotional state, facial expressions, and body language from this video frame during an interview.
+Analyze the emotional state, facial expressions, and body language from this video segment of an interview.
+TRANSCRIPT: "${transcript}"
 
-Transcript of what they're saying: "${transcript}"
+Provide a detailed TEMPORAL analysis treating this as a video clip, not a static image. Focus on DYNAMICS and CHANGES.
 
-Provide analysis including:
-1. Eye contact (0-1): Are they looking at the camera?
-2. Facial expressions: Smiling, frowning, neutral?
-3. Micro-expressions: Any subtle emotional leaks?
-4. Confidence level (0-1): Based on facial cues
-5. Nervousness level (0-1): Signs of anxiety?
-6. Enthusiasm level (0-1): Facial engagement?
-7. Overall emotional state
+1. EXPRESSION DYNAMICS:
+   - How do facial expressions change? (e.g., "Smile faded to serious", "Remained consistently neutral")
+   - Micro-expressions: Any fleeting emotion leaks?
 
-Provide 2-3 specific recommendations for improving presentation.
+2. MOVEMENT & ENERGY:
+   - Head/Body movement: Rigid, natural, or restless?
+   - Engagement Level (0-1): Based on animation and focus.
+
+3. CONFIDENCE & NERVOUSNESS (0-1):
+   - Look for signs of nervous fidgeting, blinking, or stiffness.
+   - Confidence based on stability and composure.
+
+4. EYE CONTACT (0-1):
+   - Consistency of eye contact over the clip.
+
+Provide 2-3 specific recommendations based on these DYNAMICS.
 
 Format as JSON.
             `.trim();
@@ -143,7 +150,7 @@ Format as JSON.
                 contents: {
                     parts: [
                         { text: prompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: videoFrame } }
+                        { inlineData: { mimeType: 'video/mp4', data: videoData } }
                     ]
                 }
             });

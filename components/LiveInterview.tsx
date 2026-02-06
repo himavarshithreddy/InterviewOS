@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '@/utils/audioUtils';
 import { CandidateProfile, Panelist, AvatarColor } from '@/types';
 import { AVATAR_COLOR_CLASSES } from '@/src/constants';
+import { useVideoAnalysis } from '@/src/hooks/useVideoAnalysis';
 
 // Distinct voices for each panelist - Gemini Live supported voices
 const PANELIST_VOICES = ['Kore', 'Charon', 'Fenrir', 'Aoede', 'Puck'] as const;
@@ -12,7 +13,7 @@ const PANELIST_VOICES = ['Kore', 'Charon', 'Fenrir', 'Aoede', 'Puck'] as const;
 interface Props {
   candidate: CandidateProfile;
   panelists: Panelist[];
-  onFinish: (transcriptSummary: string, durationSeconds: number) => void;
+  onFinish: (transcriptSummary: string, durationSeconds: number, bodyLanguageHistory: any[], emotionHistory: any[]) => void;
 }
 
 export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish }) => {
@@ -26,6 +27,11 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const [cameraOff, setCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentPanelistIndex, setCurrentPanelistIndex] = useState(0);
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+
+  // Analysis State
+  const [bodyLanguageHistory, setBodyLanguageHistory] = useState<any[]>([]);
+  const [emotionHistory, setEmotionHistory] = useState<any[]>([]);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -55,6 +61,14 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const lastSpeakerChangeRef = useRef<number>(Date.now());
   const questionCountRef = useRef<number>(0);
 
+  // Latency metrics (DEV instrumentation)
+  const currentTurnIdRef = useRef<number>(0);
+  const lastUserAudioChunkTsRef = useRef<number | null>(null);
+  const userStopTsRef = useRef<number | null>(null);
+  const firstTranscriptTokenTsRef = useRef<number | null>(null);
+  const firstAudioChunkQueuedTsRef = useRef<number | null>(null);
+  const audioPlaybackStartTsRef = useRef<number | null>(null);
+
   // Timer
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -73,6 +87,54 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   // Refs for tracking context
   const candidateIntroRef = useRef<string>("");
   const handOffTargetRef = useRef<string | null>(null);
+
+
+  // ---- Latency instrumentation helpers (DEV only, safe no-ops in production) ----
+  const startNewTurn = useCallback(() => {
+    currentTurnIdRef.current += 1;
+    userStopTsRef.current = null;
+    firstTranscriptTokenTsRef.current = null;
+    firstAudioChunkQueuedTsRef.current = null;
+    audioPlaybackStartTsRef.current = null;
+  }, []);
+
+  const markUserAudioChunk = useCallback(() => {
+    // Track last time we sent candidate audio upstream
+    lastUserAudioChunkTsRef.current = performance.now();
+    // While user is talking, clear any pending stop timestamp
+    userStopTsRef.current = null;
+  }, []);
+
+  const maybeLogLatencyMetrics = useCallback(() => {
+    const userStop = userStopTsRef.current;
+    const tText = firstTranscriptTokenTsRef.current;
+    const tAudioQueued = firstAudioChunkQueuedTsRef.current;
+    const tAudioStart = audioPlaybackStartTsRef.current;
+
+    if (!userStop) return;
+
+    const turnId = currentTurnIdRef.current;
+    const metrics: Record<string, number | string> = {
+      turnId,
+      userStopTs: userStop,
+    };
+
+    if (tText) {
+      metrics.ttftTextMs = tText - userStop;
+    }
+    if (tAudioQueued) {
+      metrics.ttftAudioQueuedMs = tAudioQueued - userStop;
+    }
+    if (tAudioStart) {
+      metrics.panelistStartMs = tAudioStart - userStop;
+    }
+
+    // Only log once we have at least text or audio queued timing
+    if (metrics.ttftTextMs || metrics.ttftAudioQueuedMs || metrics.panelistStartMs) {
+      // eslint-disable-next-line no-console
+      console.log("[LiveInterview][LatencyMetrics]", metrics);
+    }
+  }, []);
 
 
   // ... (inside handleLiveMessage)
@@ -177,7 +239,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       setActiveSpeaker(panelist.name);
 
       const session = await aiRef.current.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'models/gemini-3-flash-preview',
         config: {
           systemInstruction: instruction,
           responseModalities: [Modality.AUDIO],
@@ -256,6 +318,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         video: true
       });
       streamRef.current = stream;
+      setMediaStream(stream);
       setMicPermission(true);
       setCameraPermission(true);
 
@@ -280,6 +343,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           const pcmBlob = createPcmBlob(inputData, 16000);
 
           if (sessionRef.current) {
+            markUserAudioChunk();
             sessionRef.current.sendRealtimeInput({ media: pcmBlob });
           }
         };
@@ -305,7 +369,10 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         processor.onaudioprocess = (e) => {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcmBlob = createPcmBlob(inputData, 16000);
-          if (sessionRef.current) sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+          if (sessionRef.current) {
+            markUserAudioChunk();
+            sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+          }
         };
 
         source.connect(processor);
@@ -365,6 +432,12 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       const startTime = Math.max(audioCtx.currentTime, nextStartTimeRef.current);
       source.start(startTime);
       nextStartTimeRef.current = startTime + audioBuffer.duration;
+
+      // Mark when panelist audio actually starts playing for this turn
+      if (!audioPlaybackStartTsRef.current) {
+        audioPlaybackStartTsRef.current = performance.now();
+        maybeLogLatencyMetrics();
+      }
 
       source.onended = () => {
         currentSourceRef.current = null;
@@ -485,6 +558,15 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         setTranscript(newTranscript);
         // Auto-scroll to bottom
         setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+
+        // Latency: record first transcript token timing for this turn
+        const now = performance.now();
+        if (!firstTranscriptTokenTsRef.current) {
+          // Approximate user stop as last audio chunk sent before first AI text
+          userStopTsRef.current = lastUserAudioChunkTsRef.current ?? now;
+          firstTranscriptTokenTsRef.current = now;
+          maybeLogLatencyMetrics();
+        }
       }
     }
 
@@ -495,8 +577,23 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     for (const part of parts) {
       const audioData = part?.inlineData?.data;
       if (audioData) {
+        // New turn if we were previously idle (no queued or playing audio)
+        if (audioQueueRef.current.length === 0 && !isPlayingAudioRef.current) {
+          startNewTurn();
+        }
+
         setIsTalking(true);
         audioQueueRef.current.push(audioData);
+
+        // Latency: record when first audio chunk is queued
+        if (!firstAudioChunkQueuedTsRef.current) {
+          const now = performance.now();
+          if (!userStopTsRef.current) {
+            userStopTsRef.current = lastUserAudioChunkTsRef.current ?? now;
+          }
+          firstAudioChunkQueuedTsRef.current = now;
+          maybeLogLatencyMetrics();
+        }
       }
     }
     if (audioQueueRef.current.length > 0) processAudioQueue();
@@ -522,8 +619,17 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
   };
 
   const stopInterview = () => {
+    // Optional: log final aggregated latency info at end of interview
+    try {
+      maybeLogLatencyMetrics();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[LiveInterview] Error logging latency metrics on stop:", err);
+    }
+
     cleanupResources();
-    onFinish(transcript.join('\n'), duration);
+    cleanupResources();
+    onFinish(transcript.join('\n'), duration, bodyLanguageHistory, emotionHistory);
   };
 
   const toggleMic = () => {
@@ -549,6 +655,20 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     return () => cleanupResources();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Video Analysis Hook
+  useVideoAnalysis({
+    stream: mediaStream,
+    isRecording: connected && !cameraOff, // Only record when connected and camera is on
+    onAnalysisResult: (type, data) => {
+      // console.log(`[Analysis] ${type}:`, data);
+      if (type === 'body_language') {
+        setBodyLanguageHistory(prev => [...prev, data]);
+      } else if (type === 'emotion') {
+        setEmotionHistory(prev => [...prev, data]);
+      }
+    }
+  });
 
   return (
     <motion.div

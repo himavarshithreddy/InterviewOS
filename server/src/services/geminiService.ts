@@ -7,8 +7,8 @@ dotenv.config();
 // Model name constants for easy updates
 export const MODELS = {
     FLASH: "gemini-3-flash-preview",
-    PRO: "gemini-3-pro-preview",
-    LIVE: "gemini-2.5-flash-native-audio-preview-12-2025" // Live API still uses 2.5
+    PRO: "gemini-3-flash-preview",
+    LIVE: "gemini-3-flash-preview"
 } as const;
 
 // Retry configuration
@@ -266,7 +266,9 @@ Use empty strings/arrays for missing sections. Be concise.`;
      */
     async generateFinalReport(
         candidate: CandidateProfile,
-        transcriptSummary: string
+        transcriptSummary: string,
+        bodyLanguageHistory?: any[],
+        emotionHistory?: any[]
     ): Promise<FinalReport> {
         return this.retryWithBackoff(async () => {
             const prompt = `
@@ -276,6 +278,10 @@ Use empty strings/arrays for missing sections. Be concise.`;
         
         Interview Transcript/Summary:
         ${transcriptSummary}
+
+        Temporal Analysis Data (Body Language & Emotion):
+        Body Language Trends: ${JSON.stringify(bodyLanguageHistory || [])}
+        Emotion Trends: ${JSON.stringify(emotionHistory || [])}
         
         Provide a JSON output with numerical scores (0-100), detailed feedback, specific improvements, and individual comments from the personas.
         

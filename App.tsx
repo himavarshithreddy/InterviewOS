@@ -96,7 +96,7 @@ function App() {
         navigate('/interview');
     };
 
-    const handleInterviewFinished = async (transcript: string, durationSeconds: number) => {
+    const handleInterviewFinished = async (transcript: string, durationSeconds: number, bodyLanguageHistory: any[], emotionHistory: any[]) => {
         if (!candidate) return;
         navigate('/results');
 
@@ -111,7 +111,7 @@ function App() {
         setInterviewTooShort(false);
 
         try {
-            const report = await apiClient.generateReport(candidate, transcript);
+            const report = await apiClient.generateReport(candidate, transcript, bodyLanguageHistory, emotionHistory);
             setFinalReport(report);
         } catch (error: any) {
             console.error('Error generating report:', error);

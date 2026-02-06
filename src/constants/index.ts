@@ -7,6 +7,9 @@ export const API_ENDPOINTS = {
     GENERATE_PANELISTS: '/api/generate-panelists',
     GENERATE_REPORT: '/api/generate-report',
     WS_INTERVIEW: '/ws/interview',
+    ANALYZE_EMOTION: '/api/analyze-emotion',
+    ANALYZE_BODY_LANGUAGE: '/api/analyze-body-language',
+    ANALYZE_SPEECH: '/api/analyze-speech',
 } as const;
 
 // Error messages

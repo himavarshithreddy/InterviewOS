@@ -98,13 +98,13 @@ app.post('/api/generate-panelists', async (req: Request, res: Response) => {
  */
 app.post('/api/generate-report', async (req: Request, res: Response) => {
     try {
-        const { candidate, transcript } = req.body;
+        const { candidate, transcript, bodyLanguageHistory, emotionHistory } = req.body;
 
         if (!candidate || !transcript) {
             return res.status(400).json({ error: 'Candidate profile and transcript are required' });
         }
 
-        const report = await geminiService.generateFinalReport(candidate, transcript);
+        const report = await geminiService.generateFinalReport(candidate, transcript, bodyLanguageHistory, emotionHistory);
 
         res.json(report);
     } catch (error: any) {
@@ -121,7 +121,7 @@ app.post('/api/generate-report', async (req: Request, res: Response) => {
  */
 app.post('/api/analyze-emotion', async (req: Request, res: Response) => {
     try {
-        const { transcript, audioData, videoFrame } = req.body;
+        const { transcript, audioData, videoData } = req.body;
 
         if (!transcript) {
             return res.status(400).json({ error: 'Transcript is required' });
@@ -135,8 +135,8 @@ app.post('/api/analyze-emotion', async (req: Request, res: Response) => {
         const analyzer = new EmotionAnalyzer(apiKey);
 
         let analysis;
-        if (videoFrame) {
-            analysis = await analyzer.analyzeVideo(videoFrame, transcript);
+        if (videoData) {
+            analysis = await analyzer.analyzeVideo(videoData, transcript);
         } else if (audioData) {
             analysis = await analyzer.analyzeAudio(audioData, transcript);
         } else {
@@ -158,10 +158,10 @@ app.post('/api/analyze-emotion', async (req: Request, res: Response) => {
  */
 app.post('/api/analyze-body-language', async (req: Request, res: Response) => {
     try {
-        const { videoFrame } = req.body;
+        const { videoData } = req.body;
 
-        if (!videoFrame) {
-            return res.status(400).json({ error: 'Video frame is required' });
+        if (!videoData) {
+            return res.status(400).json({ error: 'Video data is required' });
         }
 
         const apiKey = process.env.GEMINI_API_KEY;
@@ -170,7 +170,7 @@ app.post('/api/analyze-body-language', async (req: Request, res: Response) => {
         }
 
         const coach = new PresentationCoach(apiKey);
-        const analysis = await coach.analyzeBodyLanguage(videoFrame);
+        const analysis = await coach.analyzeBodyLanguage(videoData);
 
         res.json(analysis);
     } catch (error: any) {

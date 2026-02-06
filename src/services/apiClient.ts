@@ -143,13 +143,33 @@ class ApiClient {
     /**
      * Generate final evaluation report
      */
-    async generateReport(candidate: CandidateProfile, transcript: string): Promise<FinalReport> {
+    async generateReport(candidate: CandidateProfile, transcript: string, bodyLanguageHistory?: any[], emotionHistory?: any[]): Promise<FinalReport> {
         return this.retryWithBackoff(async () => {
             const response = await this.client.post<FinalReport>(
                 API_ENDPOINTS.GENERATE_REPORT,
-                { candidate, transcript }
+                { candidate, transcript, bodyLanguageHistory, emotionHistory }
             );
 
+            return response.data;
+        });
+    }
+
+    /**
+     * Analyze emotion from transcript, audio, or video
+     */
+    async analyzeEmotion(data: { transcript: string; audioData?: string; videoData?: string }): Promise<any> {
+        return this.retryWithBackoff(async () => {
+            const response = await this.client.post(API_ENDPOINTS.ANALYZE_EMOTION, data);
+            return response.data;
+        });
+    }
+
+    /**
+     * Analyze body language from video
+     */
+    async analyzeBodyLanguage(videoData: string): Promise<any> {
+        return this.retryWithBackoff(async () => {
+            const response = await this.client.post(API_ENDPOINTS.ANALYZE_BODY_LANGUAGE, { videoData });
             return response.data;
         });
     }
