@@ -9,6 +9,7 @@ import { Dashboard } from './components/Dashboard';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { apiClient } from './src/services/apiClient';
 import { sessionStorage } from './src/utils/sessionStorage';
+import { SAMPLE_REPORT } from './src/utils/reportDownload';
 import { MIN_INTERVIEW_DURATION_SECONDS } from './src/constants';
 import {
     Sparkles,
@@ -46,6 +47,9 @@ function App() {
     const hasRestoredRef = useRef(false);
     useEffect(() => {
         if (hasRestoredRef.current || isProcessing) return;
+        // Don't restore/redirect if we are viewing sample report
+        if (location.pathname === '/sample-report') return;
+
         if (candidate && panelists.length > 0) return; // Already have state, skip (e.g. just completed flow)
         const savedCandidate = sessionStorage.getCandidate();
         const savedPanelists = sessionStorage.getPanelists();
@@ -56,7 +60,7 @@ function App() {
             // Defer navigate so state updates are applied before /panel route renders
             setTimeout(() => navigate('/panel', { replace: true }), 0);
         }
-    }, [navigate, isProcessing, candidate, panelists.length]);
+    }, [navigate, isProcessing, candidate, panelists.length, location.pathname]);
 
     // Handlers
     const handleResumeUploaded = async (profile: CandidateProfile) => {
@@ -283,6 +287,10 @@ function App() {
                                         <Navigate to="/" replace />
                                     )
                                 }
+                            />
+                            <Route
+                                path="/sample-report"
+                                element={<Dashboard report={SAMPLE_REPORT} onRestart={() => window.close()} />}
                             />
                             <Route path="*" element={<Navigate to="/" replace />} />
                         </Routes>

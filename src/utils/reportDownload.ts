@@ -1,4 +1,6 @@
 import { FinalReport } from '@/types';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 /** Sample report for preview/demo purposes */
 export const SAMPLE_REPORT: FinalReport = {
@@ -33,97 +35,157 @@ export const SAMPLE_REPORT: FinalReport = {
   ],
 };
 
+
+
 /**
- * Generate HTML content for the interview report
+ * Download report as PDF with charts
  */
-function generateReportHTML(report: FinalReport, filename: string): string {
-  const averageScore = Math.round(
-    (report.technicalScore + report.communicationScore + report.cultureFitScore) / 3
-  );
-  const date = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+export async function downloadReportAsPDF(elementId: string, filename = 'interview-report'): Promise<void> {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    console.error('Report element not found');
+    return;
+  }
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Interview Report - ${filename}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1f2937; line-height: 1.6; }
-    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
-    h2 { font-size: 1.25rem; margin-top: 2rem; margin-bottom: 0.75rem; color: #374151; }
-    .header { text-align: center; margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 1px solid #e5e7eb; }
-    .score { font-size: 3rem; font-weight: 700; color: #2563eb; }
-    .scores { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0; }
-    .score-item { flex: 1; min-width: 140px; padding: 1rem; background: #f9fafb; border-radius: 8px; }
-    .score-item strong { display: block; font-size: 0.875rem; color: #6b7280; }
-    .score-item span { font-size: 1.5rem; font-weight: 600; }
-    .feedback { background: #f9fafb; padding: 1rem 1.25rem; border-radius: 8px; margin: 1rem 0; white-space: pre-line; }
-    ul { margin: 0.5rem 0; padding-left: 1.5rem; }
-    li { margin: 0.5rem 0; }
-    .panelist { background: #f9fafb; padding: 1rem; border-radius: 8px; margin: 0.75rem 0; border-left: 4px solid #2563eb; }
-    .panelist-name { font-weight: 600; margin-bottom: 0.25rem; }
-    .panelist-comment { color: #4b5563; font-style: italic; }
-    .meta { color: #9ca3af; font-size: 0.875rem; margin-top: 2rem; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>Interview Evaluation Report</h1>
-    <p class="meta">Generated on ${date}</p>
-    <div class="score">${averageScore}<span style="font-size: 1.5rem; color: #6b7280;">/100</span></div>
-  </div>
+  try {
+    // Capture the element as canvas with high quality
+    const canvas = await html2canvas(element, {
+      scale: 2, // Higher quality
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff', // White background for PDF
+      onclone: (clonedDoc) => {
+        const clonedElement = clonedDoc.getElementById(elementId);
+        if (clonedElement) {
+          // 1. Force light theme text colors & remove alignment-breaking styles
+          const allElements = clonedElement.querySelectorAll('*');
+          allElements.forEach((el) => {
+            const classList = el.classList;
 
-  <h2>Score Breakdown</h2>
-  <div class="scores">
-    <div class="score-item"><strong>Technical</strong><span>${report.technicalScore}/100</span></div>
-    <div class="score-item"><strong>Communication</strong><span>${report.communicationScore}/100</span></div>
-    <div class="score-item"><strong>Culture Fit</strong><span>${report.cultureFitScore}/100</span></div>
-  </div>
+            // Fix Color Contrast
+            if (classList.contains('text-gray-200')) {
+              classList.remove('text-gray-200');
+              classList.add('text-slate-900');
+            }
+            if (classList.contains('text-gray-400')) {
+              classList.remove('text-gray-400');
+              classList.add('text-slate-600');
+            }
+            if (classList.contains('text-white')) {
+              classList.remove('text-white');
+              classList.add('text-slate-900');
+            }
 
-  <h2>Detailed Feedback</h2>
-  <div class="feedback">${report.detailedFeedback}</div>
+            // Remove letter spacing which often breaks html2canvas text alignment
+            if (classList.contains('tracking-tight')) classList.remove('tracking-tight');
+            if (classList.contains('tracking-tighter')) classList.remove('tracking-tighter');
+            if (classList.contains('tracking-wide')) classList.remove('tracking-wide');
+            if (classList.contains('tracking-wider')) classList.remove('tracking-wider');
+            if (classList.contains('tracking-widest')) classList.remove('tracking-widest');
 
-  <h2>Suggested Improvements</h2>
-  <ul>
-    ${report.improvements.map((imp) => `<li>${imp}</li>`).join('\n    ')}
-  </ul>
+            // Handle Glass Effects -> Solid White
+            if (classList.contains('glass')) {
+              classList.remove('glass');
+              classList.add('bg-white', 'border-slate-200');
+              const htmlEl = el as HTMLElement;
+              htmlEl.style.background = 'white';
+              htmlEl.style.backdropFilter = 'none';
+              htmlEl.style.boxShadow = 'none';
+              htmlEl.style.border = '1px solid #cbd5e1'; // Darker border
+            }
 
-  <h2>Panelist Remarks</h2>
-  ${report.panelistComments
-    .map(
-      (pc) => `
-  <div class="panelist">
-    <div class="panelist-name">${pc.name}</div>
-    <div class="panelist-comment">"${pc.comment}"</div>
-  </div>`
-    )
-    .join('\n')}
+            // Handle borders
+            if (classList.contains('border-white/20') || classList.contains('border-white/10')) {
+              classList.remove('border-white/20', 'border-white/10');
+              classList.add('border-slate-200');
+            }
 
-  <p class="meta">— InterviewOS Evaluation Report</p>
-</body>
-</html>`;
+            // Handle secondary backgrounds
+            if (classList.contains('bg-white/[0.04]') || classList.contains('bg-white/[0.06]')) {
+              classList.remove('bg-white/[0.04]', 'bg-white/[0.06]');
+              classList.add('bg-slate-50');
+            }
+          });
+
+          // 2. Fix Chart Colors (Recharts uses SVG)
+          // Grid lines - Make them much darker (#94a3b8 = slate-400)
+          const gridLines = clonedElement.querySelectorAll('.recharts-cartesian-grid-horizontal line, .recharts-polar-grid-angle line, .recharts-polar-grid-concentric circle, .recharts-polar-grid-concentric path');
+          gridLines.forEach(line => {
+            line.setAttribute('stroke', '#94a3b8');
+          });
+
+          // Chart text/ticks - Dark Slate (#334155)
+          const ticks = clonedElement.querySelectorAll('.recharts-text');
+          ticks.forEach(text => {
+            text.setAttribute('fill', '#334155');
+          });
+
+          // 3. Fix Icons (Lucide SVGs)
+          // Ensure they are visible if they were white/light
+          const icons = clonedElement.querySelectorAll('svg.lucide');
+          icons.forEach(icon => {
+            // If it heavily relies on currentColor and parent was changed, it should be fine.
+            // But explicit check helps.
+            const parent = icon.parentElement;
+            if (parent && (parent.classList.contains('text-white') || parent.classList.contains('text-gray-200') || parent.classList.contains('text-primary'))) {
+              // Keep primary color if it's primary, but darken it slightly for print? 
+              // Actually primary (cyan-400) is okay-ish, but check contrast.
+              // If parent was text-white/gray, force dark.
+            }
+            // Force stroke to slate-800 if it looks like it might be white
+            const style = window.getComputedStyle(icon);
+            if (style.stroke === 'rgb(255, 255, 255)' || icon.getAttribute('stroke') === '#ffffff' || icon.classList.contains('text-white')) {
+              icon.setAttribute('stroke', '#1e293b');
+            }
+          });
+        }
+      }
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+    const imgX = (pdfWidth - imgWidth * ratio) / 2;
+    const imgY = 0;
+
+    // Add image to PDF
+    pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+
+    // If content is taller than one page, add more pages
+    let heightLeft = imgHeight * ratio - pdfHeight;
+    let position = -pdfHeight;
+
+    while (heightLeft > 0) {
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', imgX, position, imgWidth * ratio, imgHeight * ratio);
+      heightLeft -= pdfHeight;
+      position -= pdfHeight;
+    }
+
+    // Download the PDF
+    const sanitized = filename.replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
+    const fullFilename = `${sanitized || 'interview-report'}-${Date.now()}.pdf`;
+    pdf.save(fullFilename);
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    alert('Failed to generate PDF. Please try again.');
+  }
 }
 
 /**
- * Download report as HTML file
+ * Open report in a new tab using the application route for exact styling
  */
-export function downloadReport(report: FinalReport, filename = 'interview-report'): void {
-  const sanitized = filename.replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
-  const fullFilename = `${sanitized || 'interview-report'}-${Date.now()}.html`;
-  const html = generateReportHTML(report, fullFilename);
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fullFilename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+export function openReportInNewTab(): void {
+  // Use hash router or history API depending on configuration, 
+  // but standard window.open should work with the created route
+  window.open('/sample-report', '_blank');
 }

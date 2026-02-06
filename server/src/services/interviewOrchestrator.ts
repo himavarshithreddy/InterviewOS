@@ -14,6 +14,7 @@ interface Panelist {
     focus: string;
     avatarColor: string;
     description: string;
+    voiceName?: string; // Optional voice configuration
 }
 
 interface TranscriptMessage {

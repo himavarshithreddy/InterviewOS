@@ -32,6 +32,7 @@ interface Panelist {
     focus: string;
     avatarColor: string;
     description: string;
+    voiceName: string; // NEW: Voice configuration
 }
 
 interface FinalReport {
@@ -239,11 +240,13 @@ Use empty strings/arrays for missing sections. Be concise.`;
             }
 
             const rawPanelists = JSON.parse(text) as Panelist[];
+            const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede'];
 
-            // Ensure IDs are unique and valid
+            // Ensure IDs are unique and valid, and assign voices
             return rawPanelists.map((p, i) => ({
                 ...p,
-                id: (i + 1).toString()
+                id: (i + 1).toString(),
+                voiceName: voices[i % voices.length]
             }));
         });
     }

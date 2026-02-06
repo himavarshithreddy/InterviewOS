@@ -19,6 +19,7 @@ interface Panelist {
     focus: string;
     avatarColor: string;
     description: string;
+    voiceName?: string;
 }
 
 interface SessionData {
@@ -32,8 +33,9 @@ interface SessionData {
 export class LiveInterviewHandler {
     private ws: WebSocket;
     private orchestrator: InterviewOrchestrator | null = null;
-    private geminiSession: any = null;
     private sessionId: string;
+    private currentPanelistId: string | null = null;
+
 
     constructor(ws: WebSocket, sessionId: string) {
         this.ws = ws;
@@ -107,67 +109,96 @@ export class LiveInterviewHandler {
             if (!apiKey) throw new Error('API key not configured');
 
             const ai = new GoogleGenAI({ apiKey });
+            this.currentPanelistId = questionParams.panelist.id;
+
+            await this.connectGeminiSession(ai, questionParams.systemInstruction, questionParams.panelist.voiceName || 'Kore');
+
 
             // LATENCY OPTIMIZATION: Configure for minimal delay
-            this.geminiSession = await ai.live.connect({
-                model: MODELS.LIVE,
-                config: {
-                    systemInstruction: questionParams.systemInstruction,
-                    responseModalities: [Modality.AUDIO],
+            // Session connection moved to helper method
 
-                    // OPTIMIZATION: Enable streaming transcription
-                    inputAudioTranscription: {
-                        model: 'gemini-3-flash-preview' // Use faster model for transcription
-                    },
-                    outputAudioTranscription: {
-                        model: 'gemini-3-flash-preview' // Use faster model for transcription
-                    },
-
-                    // OPTIMIZATION: Low-latency speech config
-                    speechConfig: {
-                        voiceConfig: {
-                            prebuiltVoiceConfig: {
-                                voiceName: 'Kore' // Fast, natural voice
-                            }
-                        }
-                    },
-
-                    // OPTIMIZATION: Response generation settings
-                    generationConfig: {
-                        temperature: 0.7, // Balanced creativity/speed
-                        maxOutputTokens: 150, // Shorter responses = faster
-                        candidateCount: 1 // Single response = faster
-                    }
-                },
-                callbacks: {
-                    onopen: () => {
-                        this.send({
-                            type: 'connected',
-                            data: {
-                                currentPanelist: questionParams.panelist,
-                                topic: questionParams.topic,
-                                depth: questionParams.depth
-                            }
-                        });
-                    },
-                    onmessage: async (msg: any) => {
-                        await this.handleGeminiMessage(msg);
-                    },
-                    onclose: () => {
-                        this.send({ type: 'disconnected' });
-                    },
-                    onerror: (err: any) => {
-                        console.error('Gemini Live error:', err);
-                        this.sendError('Live session error');
-                    }
-                }
-            });
 
             this.send({ type: 'initialized', data: { sessionId: this.sessionId } });
         } catch (error: any) {
             console.error('Failed to initialize session:', error);
             this.sendError('Failed to initialize interview session');
         }
+    }
+
+    /**
+     * Connect to Gemini Live session with specific voice and instructions
+     */
+    private async connectGeminiSession(ai: GoogleGenAI, systemInstruction: string, voiceName: string): Promise<void> {
+        console.log(`Connecting Gemini session with voice: ${voiceName}`);
+
+        this.geminiSession = await ai.live.connect({
+            model: MODELS.LIVE,
+            config: {
+                systemInstruction: systemInstruction,
+                responseModalities: [Modality.AUDIO],
+                inputAudioTranscription: { model: 'gemini-3-flash-preview' },
+                outputAudioTranscription: { model: 'gemini-3-flash-preview' },
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: voiceName
+                        }
+                    }
+                },
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 150,
+                    candidateCount: 1
+                }
+            },
+            callbacks: {
+                onopen: () => {
+                    console.log('Gemini Live session connected');
+                },
+                onmessage: async (msg: any) => {
+                    await this.handleGeminiMessage(msg);
+                },
+                onclose: () => {
+                    console.log('Gemini Live session closed');
+                },
+                onerror: (err: any) => {
+                    console.error('Gemini Live error:', err);
+                    this.sendError('Live session error');
+                }
+            }
+        });
+    }
+
+    /**
+     * Switch session to a new panelist
+     */
+    private async switchSession(panelist: Panelist, systemInstruction: string): Promise<void> {
+        if (this.currentPanelistId === panelist.id) return;
+
+        console.log(`Switching session to panelist: ${panelist.name} (${panelist.id})`);
+
+        // Close existing session
+        if (this.geminiSession) {
+            // Send a brief pause signal?
+            await this.geminiSession.close();
+            this.geminiSession = null;
+        }
+
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error('API key not configured');
+        const ai = new GoogleGenAI({ apiKey });
+
+        // Short delay to ensure clean closure
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        this.currentPanelistId = panelist.id;
+        await this.connectGeminiSession(ai, systemInstruction, panelist.voiceName || 'Kore');
+
+        // Notify client of switch
+        this.send({
+            type: 'panelist_switched',
+            data: { panelist }
+        });
     }
 
     /**
@@ -318,8 +349,19 @@ export class LiveInterviewHandler {
             });
 
             // Update Gemini system instruction for next question
-            // Note: This would require reconnecting or using a different approach
-            // For now, we'll rely on the initial system instruction
+
+            // Check if panelist changed
+            if (questionParams.panelist.id !== this.currentPanelistId) {
+                // Switch session to new panelist
+                // Update instruction to reflect HANDOFF
+                const handoffInstruction = `
+You are now taking over the interview. 
+${questionParams.systemInstruction}
+Start by briefly acknowledging the previous speaker or topic, then ask your question.
+                `.trim();
+
+                await this.switchSession(questionParams.panelist, handoffInstruction);
+            }
         } catch (error) {
             console.error('Error preparing next question:', error);
         }
