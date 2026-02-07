@@ -1,318 +1,236 @@
-# 🎤 InterviewOS
+# InterviewOS
 
-<div align="center">
-<img width="1200" height="475" alt="InterviewOS Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-
-**AI-Powered Interview Preparation Platform with Emotion Intelligence & Industry Specialization**
+**AI-Powered Interview Preparation Platform with Multi-Panelist Simulation & Real-Time Evaluation**
 
 [![Gemini 3 API](https://img.shields.io/badge/Gemini%203-API-blue)](https://ai.google.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-blue)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js-20-green)](https://nodejs.org/)
 
-[Live Demo](#) • [Documentation](./HACKATHON_README.md) • [Features](./FEATURES.md) • [Setup Guide](./SETUP_GUIDE.md)
+---
 
-</div>
+## Overview
+
+InterviewOS is an AI-powered interview preparation platform that simulates multi-panelist interviews with real-time audio/video, adaptive questioning, and comprehensive evaluation feedback. Powered by Google Gemini 3, it provides:
+
+- **Adaptive AI Interviewers** — 3 distinct panelists with unique personalities and question styles
+- **Real-Time Live Session** — Gemini Live API for ultra-low latency audio conversation
+- **Emotion & Presentation Coaching** — Confidence, nervousness, body language analysis
+- **Industry Specialization** — FAANG, Finance, Consulting, Medical, Legal, Startup prep
+- **Comprehensive Analytics** — Multi-dimensional scoring, improvements, and panelist feedback
 
 ---
 
-## 🌟 What is InterviewOS?
+## Architecture
 
-InterviewOS is a revolutionary AI-powered interview preparation platform that goes beyond traditional Q&A practice. Using Google's **Gemini 3 API**, it provides:
+### Main System Architecture
 
-- 🧠 **Adaptive AI Interviewers** - Multi-panelist simulation with intelligent question orchestration
-- 😊 **Emotion Intelligence** - Real-time confidence, nervousness, and enthusiasm detection
-- 🎭 **Presentation Coaching** - Body language analysis and filler word tracking
-- 🏢 **Industry Specialization** - FAANG, Finance, Consulting, Medical, Legal, and Startup prep
-- 💭 **Transparent AI Reasoning** - See why the AI asks each question (Thought Signatures™)
-- 🔄 **Self-Correction** - AI autonomously improves question quality
-- 📊 **Comprehensive Analytics** - Multi-dimensional scoring and trend analysis
+```mermaid
+flowchart TB
+    subgraph Client["Frontend (React + Vite)"]
+        RU[Resume Upload]
+        PC[Panel Config]
+        LI[Live Interview]
+        EM[Emotion Display]
+        DB[Dashboard]
+    end
 
----
+    subgraph Backend["Backend (Node.js + Express)"]
+        REST[REST API]
+        WS[WebSocket Server]
+        GO[Gemini Orchestrator]
+    end
 
-## ✨ Key Features
+    subgraph Services["Core Services"]
+        GS[Gemini Service]
+        IO[Interview Orchestrator]
+        EA[Emotion Analyzer]
+        PC2[Presentation Coach]
+        IS[Industry Specialist]
+    end
 
-### 🎯 Core Interview Experience
+    subgraph Gemini["Google Gemini APIs"]
+        GF[Gemini 3 Flash]
+        GP[Gemini 3 Pro]
+        GL[Gemini 2.5 Live]
+    end
 
-#### **InterviewOrchestrator™** - Adaptive Intelligence System
-- **Context-Aware Questioning**: Analyzes answer completeness and quality
-- **Adaptive Depth Control**: 5 levels from surface to deep technical
-- **Smart Panelist Rotation**: Balances fairness and expertise matching
-- **Topic Coverage Tracking**: Ensures comprehensive evaluation
+    RU --> REST
+    PC --> REST
+    LI --> WS
+    LI --> REST
+    EM --> REST
+    REST --> DB
 
-#### **Live Interview Session**
-- Real-time audio/video with Gemini Live API
-- Ultra-low latency (< 250ms)
-- Streaming transcription
-- Active speaker detection
-- Natural conversation flow
+    REST --> GO
+    WS --> GO
+    GO --> GS
+    GO --> IO
+    REST --> EA
+    REST --> PC2
+    REST --> IS
 
-#### **Multi-Panelist Simulation**
-- 3 distinct AI interviewers with unique personalities
-- Customizable personas (name, role, focus, expertise)
-- Color-coded avatars for easy identification
-- Coordinated questioning strategy
-
-### 🚀 Advanced AI Features
-
-#### **1. Emotion & Sentiment Analysis** 😊
-*Real-time emotional intelligence coaching*
-
-- **Confidence Detection** (0-1 scale): Measures how confident you sound
-- **Nervousness Detection** (0-1 scale): Identifies anxiety indicators
-- **Enthusiasm Detection** (0-1 scale): Gauges engagement level
-- **Voice Metrics**: Pace, volume, clarity, monotone detection
-- **Facial Analysis**: Eye contact, expressions, micro-expressions
-- **Sentiment Scoring**: Positive/neutral/negative with recommendations
-
-**API Endpoint**: `POST /api/analyze-emotion`
-
-#### **2. Body Language & Presentation Coach** 🎭
-*Hollywood-level presentation training*
-
-- **Posture Analysis**: Detect slouching, fidgeting
-- **Eye Contact Tracking**: Percentage looking at camera
-- **Gesture Recognition**: Frequency and appropriateness
-- **Filler Word Detection**: "Um", "like", "you know" counter
-- **Speech Pace Analysis**: Words per minute optimization
-- **Overall Presentation Score**: 0-100 with letter grade (A-F)
-
-**API Endpoints**: 
-- `POST /api/analyze-body-language`
-- `POST /api/analyze-speech`
-
-#### **3. Industry-Specific Deep Dives** 🏢
-*Hyper-specialized preparation for your target industry*
-
-**Supported Industries:**
-- 🖥️ **FAANG** - System design, algorithms, leadership principles
-- 💰 **Finance** - Financial modeling, market analysis, brainteasers
-- 📊 **Consulting** - Case frameworks, market sizing, business judgment
-- 🏥 **Medical** - Clinical reasoning, patient care, ethics
-- ⚖️ **Legal** - Case analysis, legal reasoning, advocacy
-- 🚀 **Startup** - Product thinking, growth mindset, adaptability
-
-**Features:**
-- Industry-specific question generation
-- Custom evaluation rubrics
-- Cultural fit assessment
-- Company-specific preparation (Google, Meta, Amazon, etc.)
-- Real interview questions database
-
-**API Endpoints**:
-- `GET /api/industry/:industry`
-- `POST /api/industry-questions`
-- `POST /api/industry-evaluate`
-
-### 💡 Innovation Features
-
-#### **Thought Signatures™** 💭
-*Transparent AI reasoning*
-
-- See why the AI chose each question
-- Confidence scoring (0-1)
-- Alternative approaches considered
-- Next action planning
-- Complete audit trail
-
-#### **Self-Correction Loop™** 🔄
-*Autonomous quality improvement*
-
-- Detects vague or poorly formed questions
-- Checks complexity vs. depth level
-- Ensures topic relevance
-- Tracks improvement over time
-- Common issue pattern detection
-
-#### **Marathon Agent** 📅
-*Long-running session support*
-
-- Session export/resume capability
-- Multi-day interview preparation
-- Progress persistence
-- Comprehensive state management
-
----
-
-## 🏗️ Architecture
-
+    GS --> GF
+    GS --> GP
+    GS --> GL
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend (React + TypeScript)             │
-│  • Resume Upload (PDF/DOC/DOCX)                              │
-│  • Panel Configuration                                       │
-│  • Live Interview (Audio/Video)                              │
-│  • Real-time Emotion Display                                 │
-│  • Body Language Feedback                                    │
-│  • Performance Dashboard                                     │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         │ HTTP REST API + WebSocket
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│              Backend (Node.js + Express)                     │
-│  • Resume Parsing API                                        │
-│  • Panelist Generation                                       │
-│  • Emotion Analysis                                          │
-│  • Body Language Coach                                       │
-│  • Industry Specialist                                       │
-│  • Live Interview WebSocket                                  │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         │ Gemini 3 API
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                  Google Gemini 3 APIs                        │
-│  • gemini-3-flash-preview (Fast analysis)                    │
-│  • gemini-3-pro-preview (Deep reasoning, 1M context)         │
-│  • gemini-2.5-flash-native-audio (Live API - real-time)      │
-└──────────────────────────────────────────────────────────────┘
+
+### User Flow
+
+```mermaid
+flowchart LR
+    A[Landing] --> B[Upload Resume]
+    B --> C[Parse with Gemini]
+    C --> D[Generate Panelists]
+    D --> E[Configure Panel]
+    E --> F[Start Interview]
+    F --> G[Live Session]
+    G --> H[End Interview]
+    H --> I[Generate Report]
+    I --> J[Dashboard]
+```
+
+### Data Flow: Interview Session
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant WebSocket
+    participant LiveHandler
+    participant Gemini
+
+    User->>Frontend: Speak (audio)
+    Frontend->>WebSocket: Send PCM audio
+    WebSocket->>LiveHandler: Forward to Gemini Live
+    LiveHandler->>Gemini: Real-time audio stream
+    Gemini->>LiveHandler: Audio response + transcript
+    LiveHandler->>WebSocket: Forward response
+    WebSocket->>Frontend: Audio + text
+    Frontend->>User: Play audio, show transcript
+```
+
+### Backend Architecture
+
+```mermaid
+flowchart TB
+    subgraph API["Express API"]
+        H[/api/health]
+        P[/api/parse-resume]
+        G[/api/generate-panelists]
+        R[/api/generate-report]
+        E[/api/analyze-emotion]
+        B[/api/analyze-body-language]
+        I[/api/industry-*]
+    end
+
+    subgraph WS["WebSocket"]
+        LI[/ws/interview]
+    end
+
+    subgraph Core["Service Layer"]
+        GS[GeminiService]
+        IO[InterviewOrchestrator]
+        EA[EmotionAnalyzer]
+        PC[PresentationCoach]
+        IS[IndustrySpecialist]
+    end
+
+    P --> GS
+    G --> GS
+    R --> GS
+    LI --> IO
+    IO --> GS
+    E --> EA
+    B --> PC
+    I --> IS
+```
+
+### Evaluation Pipeline
+
+```mermaid
+flowchart LR
+    T[Transcript] --> G[Gemini Pro]
+    G --> S[Parse Scores]
+    S --> V[Validate Scores]
+    V --> SA[Sample Analysis]
+    SA --> R[Final Report]
+    R --> D[Dashboard]
 ```
 
 ---
 
-## 🚀 Quick Start
+## Features
+
+| Feature | Description |
+|--------|-------------|
+| **Resume Parsing** | PDF, DOC, DOCX support — extracts skills, experience, education |
+| **Panel Generation** | 3 AI interviewers with Indian names, distinct personalities, gender-matched voices |
+| **Live Interview** | Real-time audio via Gemini Live API, streaming transcription |
+| **Adaptive Depth** | 5-level question depth (intro → base → deep) based on responses |
+| **Difficulty Levels** | Easy, Medium, Hard, Extreme — affects tone and probing |
+| **Emotion Analysis** | Confidence, nervousness, enthusiasm from transcript/audio |
+| **Body Language** | Posture, eye contact, gestures (sample data due to API limits) |
+| **Report Generation** | Technical, Communication, Culture Fit scores + panelist comments |
+| **Sample Analytics** | Body/voice/temporal analysis derived from score (with API-limits warning) |
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- **Node.js** 20+ (for both frontend and backend)
-- **Gemini API Key** ([Get one here](https://ai.google.dev/))
+- **Node.js** 20+
+- **Gemini API Key** — [Get one here](https://ai.google.dev/)
 - **npm** or **yarn**
 
 ### Installation
 
-#### 1. Clone the Repository
-
 ```bash
+# Clone
 git clone https://github.com/yourusername/InterviewOS.git
 cd InterviewOS
-```
 
-#### 2. Install Frontend Dependencies
-
-```bash
+# Frontend
 npm install
+
+# Backend
+cd server && npm install && cd ..
 ```
 
-#### 3. Install Backend Dependencies
-
-```bash
-cd server
-npm install
-cd ..
-```
-
-#### 4. Configure Environment Variables
+### Environment
 
 **Backend** (`server/.env`):
+
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_gemini_api_key
 PORT=3001
 CLIENT_URL=http://localhost:3000
 ```
 
-**Frontend** (`.env.local`):
+**Frontend** (`.env` or `.env.local`):
+
 ```env
-VITE_API_URL=http://localhost:3001
+VITE_MIN_INTERVIEW_DURATION_SECONDS=30
 ```
 
-#### 5. Run the Application
+### Run
 
-**Terminal 1 - Backend:**
 ```bash
-cd server
+# Terminal 1 — Backend
+cd server && npm run dev
+
+# Terminal 2 — Frontend
 npm run dev
 ```
 
-**Terminal 2 - Frontend:**
-```bash
-npm run dev
-```
-
-The app will be available at:
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:3001
+- **Backend**: http://localhost:3001
 - **WebSocket**: ws://localhost:3001/ws/interview
 
 ---
 
-## 📖 Usage Guide
-
-### Basic Interview Flow
-
-1. **Upload Resume** 📄
-   - Support for PDF, DOC, DOCX (up to 10MB)
-   - AI extracts skills, experience, education
-   - Specify target role
-
-2. **Review AI Panel** 👥
-   - 3 AI interviewers generated based on role
-   - Customize names, roles, focus areas
-   - Each panelist has unique expertise
-
-3. **Live Interview** 🎤
-   - Real-time audio/video conversation
-   - Streaming transcription
-   - Adaptive questioning (5 depth levels)
-   - 30-minute session
-
-4. **Get Feedback** 📊
-   - Multi-dimensional scoring
-   - Detailed strengths/weaknesses
-   - Actionable improvements
-   - Emotion and presentation analytics
-
-### Advanced Features
-
-#### Emotion Analysis
-```bash
-POST /api/analyze-emotion
-{
-  "transcript": "I worked on a scalability project...",
-  "audioData": "base64_audio",
-  "videoFrame": "base64_image"
-}
-```
-
-#### Industry-Specific Prep
-```bash
-POST /api/industry-questions
-{
-  "industry": "FAANG",
-  "role": "Senior Software Engineer",
-  "difficulty": "senior",
-  "count": 5
-}
-```
-
----
-
-## 🛠️ Tech Stack
-
-### Frontend
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **Recharts** - Data visualization
-- **Axios** - HTTP client
-
-### Backend
-- **Node.js 20** - Runtime
-- **Express** - Web framework
-- **WebSocket (ws)** - Real-time communication
-- **TypeScript** - Type safety
-- **Multer** - File uploads
-- **@google/genai** - Gemini SDK
-
-### AI/ML
-- **Gemini 3 Flash** - Fast analysis, transcription
-- **Gemini 3 Pro** - Deep reasoning, 1M context
-- **Gemini 2.5 Flash** - Live API (real-time audio)
-
----
-
-## 📊 API Endpoints
+## API Reference
 
 ### Core Endpoints
 
@@ -321,18 +239,17 @@ POST /api/industry-questions
 | `GET` | `/api/health` | Health check |
 | `POST` | `/api/parse-resume` | Parse resume (PDF/DOC/DOCX) |
 | `POST` | `/api/generate-panelists` | Generate AI interviewers |
-| `POST` | `/api/generate-report` | Generate final evaluation |
+| `POST` | `/api/generate-report` | Generate evaluation report |
 
-### Advanced Features
+### Advanced Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/analyze-emotion` | Emotion & sentiment analysis |
 | `POST` | `/api/analyze-body-language` | Body language analysis |
-| `POST` | `/api/analyze-speech` | Speech pattern analysis |
-| `GET` | `/api/industry/:industry` | Get industry profile |
-| `POST` | `/api/industry-questions` | Generate industry questions |
-| `POST` | `/api/industry-evaluate` | Evaluate with industry criteria |
+| `GET` | `/api/industry/:industry` | Industry profile |
+| `POST` | `/api/industry-questions` | Industry-specific questions |
+| `POST` | `/api/industry-evaluate` | Industry evaluation |
 
 ### WebSocket
 
@@ -342,128 +259,64 @@ POST /api/industry-questions
 
 ---
 
-## 📚 Documentation
+## Tech Stack
 
-- **[HACKATHON_README.md](./HACKATHON_README.md)** - Gemini 3 Hackathon submission details
-- **[FEATURES.md](./FEATURES.md)** - Complete feature list (current + proposed)
-- **[ADVANCED_FEATURES.md](./ADVANCED_FEATURES.md)** - Advanced AI features documentation
-- **[LATENCY_OPTIMIZATION.md](./LATENCY_OPTIMIZATION.md)** - Performance optimization details
-- **[SETUP_GUIDE.md](./SETUP_GUIDE.md)** - Detailed setup instructions
-
----
-
-## 🎯 Use Cases
-
-### For Job Seekers
-- Practice for FAANG interviews
-- Improve presentation skills
-- Reduce interview anxiety
-- Get industry-specific preparation
-- Track improvement over time
-
-### For Students
-- Prepare for campus placements
-- Learn interview best practices
-- Build confidence
-- Practice technical and behavioral questions
-
-### For Career Switchers
-- Understand new industry norms
-- Learn cultural expectations
-- Practice industry-specific scenarios
-- Get targeted feedback
-
-### For Professionals
-- Prepare for promotions
-- Practice executive interviews
-- Refine leadership communication
-- Industry-specific upskilling
+| Layer | Technologies |
+|-------|---------------|
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Recharts, Axios |
+| **Backend** | Node.js 20, Express, WebSocket (ws), Multer |
+| **AI** | Gemini 3 Flash, Gemini 3 Pro, Gemini 2.5 Flash Live |
+| **Services** | GeminiService, InterviewOrchestrator, EmotionAnalyzer, PresentationCoach, IndustrySpecialist |
 
 ---
 
-## 🏆 Competitive Advantages
+## Project Structure
 
-| Feature | InterviewOS | Traditional Prep | Competitors |
-|---------|-------------|------------------|-------------|
-| **AI Interviewers** | ✅ 3 personas | ❌ None | ⚠️ 1 generic |
-| **Emotion Detection** | ✅ Real-time | ❌ None | ❌ None |
-| **Body Language** | ✅ AI-powered | ❌ None | ⚠️ Manual |
-| **Industry Specialization** | ✅ 6 industries | ❌ Generic | ⚠️ 1-2 max |
-| **Adaptive Depth** | ✅ 5 levels | ❌ Fixed | ⚠️ 2 levels |
-| **Thought Transparency** | ✅ Full | ❌ None | ❌ None |
-| **Self-Correction** | ✅ Autonomous | ❌ None | ❌ None |
-| **Multimodal Analysis** | ✅ Audio+Video+Text | ❌ Text only | ⚠️ Audio only |
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for details.
-
-### Development Workflow
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+```
+InterviewOS/
+├── components/          # React UI components
+│   ├── LiveInterview.tsx
+│   ├── Dashboard.tsx
+│   ├── PanelConfiguration.tsx
+│   └── ResumeUploader.tsx
+├── server/
+│   └── src/
+│       ├── index.ts              # Express + WebSocket entry
+│       ├── services/
+│       │   ├── geminiService.ts
+│       │   ├── interviewOrchestrator.ts
+│       │   ├── emotionAnalyzer.ts
+│       │   ├── presentationCoach.ts
+│       │   └── industrySpecialist.ts
+│       └── websocket/
+│           └── liveInterviewHandler.ts
+├── src/
+│   ├── services/apiClient.ts
+│   ├── hooks/useVideoAnalysis.ts
+│   └── utils/reportDownload.ts
+├── types.ts
+└── vite.config.ts
+```
 
 ---
 
-## 🙏 Acknowledgments
+## Gemini Models
 
-- **Google Gemini Team** - For the incredible Gemini 3 API
-- **AI Studio** - For the development platform
-- **Open Source Community** - For the amazing tools and libraries
-
----
-
-## 📞 Contact & Support
-
-- **GitHub Issues**: [Report bugs or request features](https://github.com/yourusername/InterviewOS/issues)
-- **Email**: support@interviewos.com
-- **Twitter**: [@InterviewOS](https://twitter.com/InterviewOS)
-- **Discord**: [Join our community](https://discord.gg/interviewos)
+| Use Case | Model | Note |
+|----------|-------|------|
+| Resume parsing | `gemini-3-flash-preview` | Fast extraction |
+| Panelist generation | `gemini-3-flash-preview` | Persona creation |
+| Final evaluation | `gemini-3-pro-preview` | Deep reasoning |
+| Live interview | `gemini-2.5-flash-native-audio-preview` | Only model with Live API |
 
 ---
 
-## 🗺️ Roadmap
+## Sample Data Notice
 
-### Q1 2026 ✅
-- [x] Core interview flow
-- [x] Multi-panelist simulation
-- [x] Emotion analysis
-- [x] Body language coach
-- [x] Industry specialization
-
-### Q2 2026 🚧
-- [ ] AR/VR interview simulation
-- [ ] Peer review network
-- [ ] Company-specific prep database
-- [ ] Mobile app (iOS/Android)
-- [ ] Interview recording & playback
-
-### Q3 2026 📅
-- [ ] Gamification (Interview Mastery Path)
-- [ ] Performance analytics dashboard
-- [ ] Real-time job market integration
-- [ ] Neuro-adaptive learning
-- [ ] Multi-language support
+Body language, voice, temporal, and spatial analysis use **sample/demonstration data** due to API rate limits on the free tier. Core scores (Technical, Communication, Culture Fit) and panelist feedback are based on your actual interview transcript.
 
 ---
 
-<div align="center">
+## License
 
-**Built with ❤️ using Google Gemini 3 API**
-
-⭐ Star us on GitHub if you find this helpful!
-
-[Get Started](#-quick-start) • [View Demo](#) • [Read Docs](./HACKATHON_README.md)
-
-</div>
+MIT License — see LICENSE file for details.
