@@ -87,6 +87,9 @@ export class LiveInterviewHandler {
             case 'transcript_update':
                 await this.handleTranscriptUpdate(message.data);
                 break;
+            case 'speech_end':
+                await this.handleSpeechEnd(message.data);
+                break;
             default:
                 console.warn('Unknown message type:', message.type);
         }
@@ -211,22 +214,46 @@ export class LiveInterviewHandler {
                 timestamp: data.timestamp
             });
 
-            // Only generate hints after user responses (not after AI questions)
+            // Generate hints after user responses (not after AI - would corrupt orchestrator state)
             if (data.speaker === 'user') {
-                const hint = await this.generateOrchestrationHint();
-
-                // Send hint back to client
-                this.send({
-                    type: 'orchestration_hint',
-                    data: hint
-                });
-
-                console.log(`Orchestration hint sent: topic="${hint.suggestedTopic}", depth=${hint.suggestedDepth}, followUp=${hint.shouldFollowUp}`);
+                await this.sendOrchestrationHint();
             }
         } catch (error) {
             console.error('Error processing transcript update:', error);
         }
     }
+
+    /**
+     * Tier 5: Handle speech_end - immediate hint generation when user stops speaking
+     */
+    private async handleSpeechEnd(data?: { transcript?: string }): Promise<void> {
+        if (!this.orchestrator) return;
+
+        try {
+            if (data?.transcript?.trim()) {
+                this.orchestrator.addMessage({
+                    id: Date.now().toString(),
+                    speaker: 'user',
+                    text: data.transcript.trim(),
+                    timestamp: Date.now()
+                });
+            }
+            await this.sendOrchestrationHint();
+        } catch (error) {
+            console.error('Error processing speech_end:', error);
+        }
+    }
+
+    /**
+     * Generate and send orchestration hint to client
+     */
+    private async sendOrchestrationHint(): Promise<void> {
+        if (!this.orchestrator) return;
+        const hint = await this.generateOrchestrationHint();
+        this.send({ type: 'orchestration_hint', data: hint });
+        console.log(`Orchestration hint sent: topic="${hint.suggestedTopic}", depth=${hint.suggestedDepth}, followUp=${hint.shouldFollowUp}`);
+    }
+
 
     /**
      * Generate orchestration hint based on current interview state

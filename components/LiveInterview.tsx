@@ -6,6 +6,7 @@ import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '@/utils/audi
 import { CandidateProfile, Panelist, AvatarColor } from '@/types';
 import { AVATAR_COLOR_CLASSES } from '@/src/constants';
 import { useVideoAnalysis } from '@/src/hooks/useVideoAnalysis';
+import { useVAD } from '@/src/hooks/useVAD';
 
 // Distinct voices for each panelist - Gemini Live supported voices
 const PANELIST_VOICES = ['Kore', 'Charon', 'Fenrir', 'Aoede', 'Puck'] as const;
@@ -52,14 +53,15 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const isPlayingAudioRef = useRef(false);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const interruptedRef = useRef(false);
+  const audioGainRef = useRef<GainNode | null>(null);
   // Refs for transcript accumulation (avoids race when word-by-word chunks arrive rapidly)
   const transcriptLinesRef = useRef<string[]>([]);
   const currentLineRef = useRef<{ speaker: string; content: string; prefix: string } | null>(null);
   const lastAppendedChunksRef = useRef<string[]>([]);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Phase 3: Parallel audio processing - pre-decode next chunk
-  const preDecodedBufferRef = useRef<AudioBuffer | null>(null);
+  // Phase 3 + Tier 6: Pre-decode lookahead (3 chunks) to reduce playback latency
+  const preDecodedBuffersRef = useRef<AudioBuffer[]>([]);
 
   // Phase 2: Batched transcript updates
   const pendingTranscriptUpdateRef = useRef<string[] | null>(null);
@@ -73,11 +75,18 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const lastSpeakerChangeRef = useRef<number>(Date.now());
   const questionCountRef = useRef<number>(0);
 
+  // Tier 1: Overlapped session creation - pre-warm next panelist before switch
+  const preWarmedSessionRef = useRef<{ index: number; session: any } | null>(null);
+  const preWarmInProgressRef = useRef<number | null>(null);
+
   // Orchestration WebSocket
   const orchestrationWsRef = useRef<WebSocket | null>(null);
   const [orchestrationHint, setOrchestrationHint] = useState<any>(null);
   const lastOrchestrationUpdateRef = useRef<number>(0);
-  const ORCHESTRATION_THROTTLE_MS = 2000; // Throttle updates to every 2 seconds
+  const ORCHESTRATION_THROTTLE_MS = 500; // Tier 5: Reduced from 2000ms for fresher hints
+
+  // Ref for handleLiveMessage (used by pre-warmed sessions before fn is defined)
+  const handleLiveMessageRef = useRef<(message: LiveServerMessage, panelistName?: string) => void>(() => {});
 
   // Latency metrics (DEV instrumentation)
   const currentTurnIdRef = useRef<number>(0);
@@ -230,6 +239,47 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     `.trim();
   }, [candidate, panelists, orchestrationHint]);
 
+  // Tier 1: Pre-warm next panelist session in background (overlapped creation)
+  const preWarmNextPanelist = useCallback((nextIndex: number) => {
+    if (!aiRef.current || preWarmInProgressRef.current === nextIndex) return;
+    if (preWarmedSessionRef.current?.index === nextIndex && preWarmedSessionRef.current?.session) return;
+
+    preWarmInProgressRef.current = nextIndex;
+    const panelist = panelists[nextIndex];
+    const voice = PANELIST_VOICES[nextIndex % PANELIST_VOICES.length];
+    const instruction = generatePanelistInstruction(nextIndex, false);
+    const panelistName = panelist.name;
+
+    aiRef.current.live.connect({
+      model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+      config: {
+        systemInstruction: instruction,
+        responseModalities: [Modality.AUDIO],
+        outputAudioTranscription: {},
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
+          languageCode: 'en-US'
+        }
+      },
+      callbacks: {
+        onopen: () => {},
+        onmessage: async (message: LiveServerMessage) => {
+          handleLiveMessageRef.current(message, panelistName);
+        },
+        onclose: () => {},
+        onerror: () => { preWarmInProgressRef.current = null; }
+      }
+    }).then((session: any) => {
+      if (preWarmInProgressRef.current === nextIndex) {
+        preWarmedSessionRef.current = { index: nextIndex, session };
+      }
+      preWarmInProgressRef.current = null;
+    }).catch((err: unknown) => {
+      console.warn('Pre-warm failed:', err);
+      preWarmInProgressRef.current = null;
+    });
+  }, [panelists, generatePanelistInstruction]);
+
   // Switch to a different panelist session
   const switchToPanelist = useCallback(async (panelistIndex: number, isIntro: boolean = false) => {
     if (isSwitchingSessionRef.current) {
@@ -245,31 +295,36 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     isSwitchingSessionRef.current = true;
 
     try {
-      // Close existing session gracefully
-      if (sessionRef.current) {
-        console.log('Closing previous session...');
-        try {
-          await sessionRef.current.close();
-        } catch (e) {
-          console.warn('Error closing session:', e);
-        }
-        sessionRef.current = null;
+      const existingSession = sessionRef.current;
+      let session: any;
 
-        // Brief pause for clean handoff (optimized from 300ms to 100ms)
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Tier 1: Use pre-warmed session if available (eliminates 1-3s connection delay)
+      if (preWarmedSessionRef.current?.index === panelistIndex && preWarmedSessionRef.current?.session && !isIntro) {
+        session = preWarmedSessionRef.current.session;
+        preWarmedSessionRef.current = null;
+        preWarmInProgressRef.current = null;
+        console.log(`Using pre-warmed session for panelist: ${panelists[panelistIndex].name}`);
+      } else {
+        preWarmedSessionRef.current = null;
+        preWarmInProgressRef.current = null;
+      }
+
+      // Close existing session (fire-and-forget when using pre-warmed)
+      if (existingSession) {
+        const toClose = existingSession;
+        sessionRef.current = null;
+        toClose.close().catch((e: unknown) => console.warn('Error closing session:', e));
+        await new Promise<void>(resolve => queueMicrotask(() => resolve()));
       }
 
       const panelist = panelists[panelistIndex];
       const voice = PANELIST_VOICES[panelistIndex % PANELIST_VOICES.length];
-      const instruction = generatePanelistInstruction(panelistIndex, isIntro);
 
-      console.log(`Switching to panelist: ${panelist.name} with voice: ${voice}`);
+      if (!session) {
+        const instruction = generatePanelistInstruction(panelistIndex, isIntro);
+        console.log(`Switching to panelist: ${panelist.name} with voice: ${voice}`);
 
-      currentPanelistRef.current = panelistIndex;
-      setCurrentPanelistIndex(panelistIndex);
-      setActiveSpeaker(panelist.name);
-
-      const session = await aiRef.current.live.connect({
+        session = await aiRef.current.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           systemInstruction: instruction,
@@ -296,7 +351,11 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           }
         }
       });
+      }
 
+      currentPanelistRef.current = panelistIndex;
+      setCurrentPanelistIndex(panelistIndex);
+      setActiveSpeaker(panelist.name);
       sessionRef.current = session;
       lastSpeakerChangeRef.current = Date.now();
 
@@ -320,6 +379,12 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
 
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       audioContextRef.current = audioCtx;
+
+      // Crossfade gain node for smooth panelist transitions (Tier 3 optimization)
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 1;
+      gainNode.connect(audioCtx.destination);
+      audioGainRef.current = gainNode;
 
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       inputContextRef.current = inputCtx;
@@ -422,6 +487,29 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       }));
     }
   }, []);
+
+  // Tier 5: Send speech_end to trigger immediate hint generation (bypasses throttle)
+  const sendSpeechEnd = useCallback((transcript?: string) => {
+    if (orchestrationWsRef.current?.readyState === WebSocket.OPEN) {
+      orchestrationWsRef.current.send(JSON.stringify({
+        type: 'speech_end',
+        data: transcript ? { transcript } : {}
+      }));
+    }
+  }, []);
+
+  // Tier 2: Client-side VAD for faster end-of-speech detection
+  useVAD({
+    enabled: connected,
+    stream: mediaStream,
+    onSpeechEnd: () => {
+      userStopTsRef.current = performance.now();
+      sendSpeechEnd();
+    },
+    onSpeechStart: () => {
+      userStopTsRef.current = null;
+    },
+  });
 
   const startMediaStreaming = async () => {
     try {
@@ -528,7 +616,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     if (!audioCtx || audioQueueRef.current.length === 0) return;
     if (interruptedRef.current) {
       audioQueueRef.current = [];
-      preDecodedBufferRef.current = null;
+      preDecodedBuffersRef.current = [];
       return;
     }
     // Strict sequential playback - never start next until current ends
@@ -538,34 +626,42 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     const audioData = audioQueueRef.current.shift()!;
 
     try {
-      // Phase 3: Use pre-decoded buffer if available, otherwise decode now
+      // Phase 3 + Tier 6: Use pre-decoded buffer if available, otherwise decode now
       let audioBuffer: AudioBuffer;
-      if (preDecodedBufferRef.current) {
-        audioBuffer = preDecodedBufferRef.current;
-        preDecodedBufferRef.current = null;
+      if (preDecodedBuffersRef.current.length > 0) {
+        audioBuffer = preDecodedBuffersRef.current.shift()!;
       } else {
         audioBuffer = await decodeAudioData(base64ToUint8Array(audioData), audioCtx, 24000);
       }
 
       if (interruptedRef.current) return;
 
-      // Phase 3: Start pre-decoding next chunk while current plays
-      if (audioQueueRef.current.length > 0 && !interruptedRef.current) {
-        const nextAudioData = audioQueueRef.current[0];
-        decodeAudioData(base64ToUint8Array(nextAudioData), audioCtx, 24000)
-          .then(buffer => {
-            preDecodedBufferRef.current = buffer;
-          })
-          .catch(err => console.warn('Pre-decode failed:', err));
+      // Tier 6: Pre-decode up to 3 chunks ahead while current plays
+      const toPreDecode = Math.min(3 - preDecodedBuffersRef.current.length, audioQueueRef.current.length);
+      for (let i = 0; i < toPreDecode && !interruptedRef.current; i++) {
+        const nextAudioData = audioQueueRef.current[i];
+        if (nextAudioData) {
+          decodeAudioData(base64ToUint8Array(nextAudioData), audioCtx, 24000)
+            .then(buffer => {
+              if (!interruptedRef.current) {
+                preDecodedBuffersRef.current.push(buffer);
+              }
+            })
+            .catch(err => console.warn('Pre-decode failed:', err));
+        }
       }
 
       const source = audioCtx.createBufferSource();
       source.buffer = audioBuffer;
       currentSourceRef.current = source;
 
-      // Connect to destination (via gain node if we stored it, filtering out pops)
-      // For now connect to destination, but we should use a gain node for smoothing
-      source.connect(audioCtx.destination);
+      // Connect via gain node for smooth crossfade between panelists (Tier 3)
+      const outputGain = audioGainRef.current;
+      if (outputGain) {
+        source.connect(outputGain);
+      } else {
+        source.connect(audioCtx.destination);
+      }
 
       const startTime = Math.max(audioCtx.currentTime, nextStartTimeRef.current);
       source.start(startTime);
@@ -588,6 +684,12 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           // Increment question count and check for panelist rotation
           questionCountRef.current += 1;
 
+          // Tier 1: Pre-warm next panelist for fallback rotation (after first question)
+          if (questionCountRef.current === 1) {
+            const nextIndex = (currentPanelistRef.current + 1) % panelists.length;
+            preWarmNextPanelist(nextIndex);
+          }
+
           // PRIORITY 1: Check for AI-driven dynamic handoff first
           if (handOffTargetRef.current) {
             console.log(`Executing dynamic handoff to: ${handOffTargetRef.current}`);
@@ -604,7 +706,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
             if (nextIndex !== -1 && nextIndex !== currentPanelistRef.current) {
               console.log(`Switching to panelist: ${panelists[nextIndex].name}`);
               questionCountRef.current = 0;
-              setTimeout(() => switchToPanelist(nextIndex, false), 500);
+              setTimeout(() => switchToPanelist(nextIndex, false), 50);
               return;
             } else {
               console.log(`Could not find panelist matching: ${targetName}`);
@@ -618,10 +720,10 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
             questionCountRef.current = 0;
             const nextIndex = (currentPanelistRef.current + 1) % panelists.length;
 
-            // Schedule switch with a brief pause for natural handoff
+            // Schedule switch with minimal pause for natural handoff (Tier 3: 800ms -> 100ms)
             setTimeout(() => {
               switchToPanelist(nextIndex, false);
-            }, 800);
+            }, 100);
           }
         } else {
           // More audio chunks to play
@@ -640,7 +742,27 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     const audioCtx = audioContextRef.current;
     if (!audioCtx) return;
 
-
+    // Tier 7: Process audio first for lowest latency - start playback before transcript updates
+    const parts = message.serverContent?.modelTurn?.parts ?? [];
+    for (const part of parts) {
+      const audioData = part?.inlineData?.data;
+      if (audioData) {
+        if (audioQueueRef.current.length === 0 && !isPlayingAudioRef.current) {
+          startNewTurn();
+        }
+        setIsTalking(true);
+        audioQueueRef.current.push(audioData);
+        if (!firstAudioChunkQueuedTsRef.current) {
+          const now = performance.now();
+          if (!userStopTsRef.current) {
+            userStopTsRef.current = lastUserAudioChunkTsRef.current ?? now;
+          }
+          firstAudioChunkQueuedTsRef.current = now;
+          maybeLogLatencyMetrics();
+        }
+      }
+    }
+    if (audioQueueRef.current.length > 0) processAudioQueue();
 
     // Handle AI's speech (outputTranscription) - what the panelist is saying
     if (message.serverContent?.outputTranscription) {
@@ -657,6 +779,14 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           const targetName = passMatch[1].trim();
           if (!handOffTargetRef.current) {
             handOffTargetRef.current = targetName;
+            // Tier 1: Pre-warm target panelist session while AI is still speaking
+            let nextIndex = panelists.findIndex(p => p.name.toLowerCase() === targetName.toLowerCase());
+            if (nextIndex === -1) {
+              nextIndex = panelists.findIndex(p => p.name.toLowerCase().startsWith(targetName.toLowerCase()) || targetName.toLowerCase().includes(p.name.split(' ')[0].toLowerCase()));
+            }
+            if (nextIndex !== -1 && nextIndex !== currentPanelistRef.current) {
+              preWarmNextPanelist(nextIndex);
+            }
           }
           // Remove the token from display text
           content = content.replace(/\[PASS:\s*[^\]]+\]/gi, '').trim();
@@ -721,39 +851,12 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       }
     }
 
-
-
-    // Process all audio parts (sequential queue prevents overlap)
-    const parts = message.serverContent?.modelTurn?.parts ?? [];
-    for (const part of parts) {
-      const audioData = part?.inlineData?.data;
-      if (audioData) {
-        // New turn if we were previously idle (no queued or playing audio)
-        if (audioQueueRef.current.length === 0 && !isPlayingAudioRef.current) {
-          startNewTurn();
-        }
-
-        setIsTalking(true);
-        audioQueueRef.current.push(audioData);
-
-        // Latency: record when first audio chunk is queued
-        if (!firstAudioChunkQueuedTsRef.current) {
-          const now = performance.now();
-          if (!userStopTsRef.current) {
-            userStopTsRef.current = lastUserAudioChunkTsRef.current ?? now;
-          }
-          firstAudioChunkQueuedTsRef.current = now;
-          maybeLogLatencyMetrics();
-        }
-      }
-    }
-    if (audioQueueRef.current.length > 0) processAudioQueue();
-
     if (message.serverContent?.interrupted) {
       interruptedRef.current = true;
       currentSourceRef.current?.stop();
       currentSourceRef.current = null;
       audioQueueRef.current = [];
+      preDecodedBuffersRef.current = [];
       nextStartTimeRef.current = audioCtx.currentTime;
       isPlayingAudioRef.current = false;
       setIsTalking(false);
@@ -761,12 +864,27 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     }
   };
 
+  useEffect(() => {
+    handleLiveMessageRef.current = handleLiveMessage;
+  });
+
   const cleanupResources = () => {
     if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
     if (processorRef.current) processorRef.current.disconnect();
     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+    if (sessionRef.current) {
+      sessionRef.current.close().catch(() => {});
+      sessionRef.current = null;
+    }
     if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close().catch(console.error);
     if (inputContextRef.current?.state !== 'closed') inputContextRef.current?.close().catch(console.error);
+
+    // Close pre-warmed session if any (Tier 1)
+    if (preWarmedSessionRef.current?.session) {
+      preWarmedSessionRef.current.session.close().catch(() => {});
+      preWarmedSessionRef.current = null;
+    }
+    preWarmInProgressRef.current = null;
 
     // Close orchestration WebSocket
     if (orchestrationWsRef.current?.readyState === WebSocket.OPEN) {
