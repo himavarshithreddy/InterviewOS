@@ -341,7 +341,10 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
 
   // Connect to orchestration WebSocket
   const connectOrchestrationWebSocket = () => {
-    const wsUrl = `ws://localhost:3001/ws/interview`;
+    // Use same origin in production (nginx proxies /ws to backend)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws/interview`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
