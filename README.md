@@ -115,17 +115,17 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph API["Express API"]
-        H[/api/health]
-        P[/api/parse-resume]
-        G[/api/generate-panelists]
-        R[/api/generate-report]
-        E[/api/analyze-emotion]
-        B[/api/analyze-body-language]
-        I[/api/industry-*]
+        H[api/health]
+        P[api/parse-resume]
+        G[api/generate-panelists]
+        R[api/generate-report]
+        E[api/analyze-emotion]
+        B[api/analyze-body-language]
+        I[api/industry]
     end
 
     subgraph WS["WebSocket"]
-        LI[/ws/interview]
+        LI[ws/interview]
     end
 
     subgraph Core["Service Layer"]
