@@ -412,9 +412,7 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
       <footer className="mt-16 pt-4">
         <div className="w-full bg-background border-t border-border/80 px-4 py-4 rounded-b-3xl flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground/90">
           <div className="flex items-center gap-2">
-            <div className="relative h-6 w-6 flex items-center justify-center rounded-md border border-border bg-background text-primary">
-              <span className="text-xs font-bold">I</span>
-            </div>
+            <img src="/logo.svg" alt="InterviewOS" className="h-6 w-6 flex-shrink-0" />
             <span className="font-semibold tracking-tight text-sm text-foreground">
               InterviewOS
             </span>
