@@ -80,9 +80,12 @@
   }
 
   @keyframes gradient-shift {
-    0%, 100% {
+
+    0%,
+    100% {
       background-position: 0% 50%;
     }
+
     50% {
       background-position: 100% 50%;
     }
@@ -111,9 +114,11 @@
     0% {
       background-position: 0% 0%;
     }
+
     50% {
       background-position: 50% 100%;
     }
+
     100% {
       background-position: 100% 0%;
     }
@@ -188,6 +193,7 @@
     0% {
       transform: translateZ(-500px) rotate(0deg);
     }
+
     100% {
       transform: translateZ(500px) rotate(0deg);
     }
@@ -197,6 +203,7 @@
     0% {
       opacity: 0.6;
     }
+
     100% {
       opacity: 0;
     }
@@ -208,16 +215,20 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
 }
+
 .panel-style-textarea::-webkit-scrollbar {
   width: 8px;
 }
+
 .panel-style-textarea::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .panel-style-textarea::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.4);
   border-radius: 4px;
 }
+
 .panel-style-textarea::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.6);
 }
@@ -230,6 +241,7 @@
     min-width: 35%;
     max-width: 35%;
   }
+
   .resume-upload-preview {
     flex: 1 1 0;
     min-width: 0;
