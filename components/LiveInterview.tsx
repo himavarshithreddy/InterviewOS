@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage, Modality, StartSensitivity, EndSensitivity } from "@google/genai";
 import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Activity, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '@/utils/audioUtils';
@@ -8,8 +8,8 @@ import { AVATAR_COLOR_CLASSES } from '@/src/constants';
 import { useVideoAnalysis } from '@/src/hooks/useVideoAnalysis';
 import { useVAD } from '@/src/hooks/useVAD';
 
-// Distinct voices for each panelist - Gemini Live supported voices
-const PANELIST_VOICES = ['Kore', 'Charon', 'Fenrir', 'Aoede', 'Puck'] as const;
+// Fallback voices for panelists (male, female, male pattern) - used only if backend voiceName is missing
+const PANELIST_VOICES = ['Puck', 'Kore', 'Charon', 'Aoede', 'Fenrir'] as const;
 
 interface Props {
   candidate: CandidateProfile;
@@ -18,6 +18,7 @@ interface Props {
 }
 
 export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish }) => {
+  const [readyToStart, setReadyToStart] = useState(false);
   const [connected, setConnected] = useState(false);
   const [isTalking, setIsTalking] = useState(false);
   const [activeSpeaker, setActiveSpeaker] = useState<string>("System");
@@ -57,6 +58,10 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   // Refs for transcript accumulation (avoids race when word-by-word chunks arrive rapidly)
   const transcriptLinesRef = useRef<string[]>([]);
   const currentLineRef = useRef<{ speaker: string; content: string; prefix: string } | null>(null);
+  const currentUserLineRef = useRef<string>(''); // Full accumulated user text for current turn
+  const lastSegmentTextRef = useRef<string>(''); // Tracks Gemini's cumulative text within current segment
+  const segmentStartLenRef = useRef<number>(0); // Length of currentUserLineRef when current segment started
+  const turnBoundaryRef = useRef(false); // Tracks when user finishes speaking → next AI output starts new dialog
   const lastAppendedChunksRef = useRef<string[]>([]);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +92,8 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
 
   // Ref for handleLiveMessage (used by pre-warmed sessions before fn is defined)
   const handleLiveMessageRef = useRef<(message: LiveServerMessage, panelistName?: string) => void>(() => {});
+
+  const handleLiveMessageCountRef = useRef(0);
 
   // Latency metrics (DEV instrumentation)
   const currentTurnIdRef = useRef<number>(0);
@@ -169,6 +176,25 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const generatePanelistInstruction = useCallback((panelistIndex: number, isIntro: boolean = false) => {
     const panelist = panelists[panelistIndex];
     const otherPanelists = panelists.filter((_, i) => i !== panelistIndex);
+    const difficulty = candidate.difficulty || 'Medium';
+
+    // Difficulty-specific tone and questioning style
+    const difficultyGuide: Record<string, string> = {
+      Easy: 'SOFT & WELCOMING: Be encouraging, patient, and forgiving. Ask foundational questions. Give hints if they struggle. Focus on potential over perfection.',
+      Medium: 'PROFESSIONAL & BALANCED: Standard corporate style. Ask clear questions. Gently probe when needed. Fair but not lenient.',
+      Hard: 'STRICT & PROBING: Expect detailed answers. Follow up on gaps. Challenge vague responses. High bar but still professional.',
+      Extreme: 'RIGOROUS & DEMANDING: Zero fluff. Push for precision. Stress-test with edge cases. Skeptical until proven.'
+    };
+    const difficultyStyle = difficultyGuide[difficulty] || difficultyGuide.Medium;
+
+    // Progressive flow: introduction → base → deep
+    const flowGuidance = `
+PROGRESSIVE INTERVIEW FLOW (follow this strictly):
+1. INTRODUCTION: Warm greeting, put candidate at ease. Ask them to tell us about themselves. Do NOT jump to technical or deep questions.
+2. BASE LEVEL: After intro, ask broad, surface-level questions in your focus area. Simple "tell me about..." or "how would you approach..." - nothing too specific yet.
+3. GO DEEPER: Only after they answer base questions well, ask follow-ups that probe deeper. Lead with curiosity, not interrogation.
+Keep the pace SMOOTH. Never rush from intro to deep. Let the candidate breathe between questions.
+`;
 
     // Build conversation context from recent transcript (last 6 exchanges)
     const recentTranscript = transcriptLinesRef.current.slice(-6);
@@ -209,6 +235,11 @@ You are ${panelist.name}, a ${panelist.role} conducting a job interview.
 Your focus area: ${panelist.focus}
 Your personality: ${panelist.description}
 
+INTERVIEW DIFFICULTY (user-selected): ${difficulty}
+${difficultyStyle}
+
+${flowGuidance}
+
 INTERVIEW CONTEXT:
 - Candidate: ${candidate.name}
 - Role: ${candidate.targetRole || 'Software Developer'}
@@ -224,8 +255,8 @@ CRITICAL RULES:
 2. Keep responses concise (2-3 sentences max for questions)
 3. Focus ONLY on your area: ${panelist.focus}
 4. ${isIntro
-        ? 'Start with a warm, welcoming greeting. Then ask a high-level "icebreaker" question about their background to make them comfortable. Do NOT dive deep yet.'
-        : 'Start with a high-level conceptual question in your focus area. detailed follow-ups ONLY if they answer well. Start slow, then go deep.'}
+        ? 'Start SOFT and WARM. Greet the candidate, introduce yourself, then ask them to tell us about themselves. Do NOT ask technical or deep questions yet.'
+        : 'Match the current phase: if conversation is new, ask base-level questions. Only go deep (follow-ups, probing) after they\'ve answered well and the flow is established.'}
 5. Be conversational and natural - this is a live video call
 6. DO NOT repeat questions that were already asked in the conversation
 7. Build on the candidate's previous answers when asking follow-ups
@@ -246,7 +277,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
 
     preWarmInProgressRef.current = nextIndex;
     const panelist = panelists[nextIndex];
-    const voice = PANELIST_VOICES[nextIndex % PANELIST_VOICES.length];
+    const voice = panelist.voiceName || PANELIST_VOICES[nextIndex % PANELIST_VOICES.length];
     const instruction = generatePanelistInstruction(nextIndex, false);
     const panelistName = panelist.name;
 
@@ -255,10 +286,18 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       config: {
         systemInstruction: instruction,
         responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
         outputAudioTranscription: {},
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
           languageCode: 'en-US'
+        },
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+            endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+            silenceDurationMs: 2000,
+          }
         }
       },
       callbacks: {
@@ -313,12 +352,15 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       if (existingSession) {
         const toClose = existingSession;
         sessionRef.current = null;
-        toClose.close().catch((e: unknown) => console.warn('Error closing session:', e));
+        const closeResult = toClose.close();
+        if (closeResult != null && typeof closeResult.catch === 'function') {
+          closeResult.catch((e: unknown) => console.warn('Error closing session:', e));
+        }
         await new Promise<void>(resolve => queueMicrotask(() => resolve()));
       }
 
       const panelist = panelists[panelistIndex];
-      const voice = PANELIST_VOICES[panelistIndex % PANELIST_VOICES.length];
+      const voice = panelist.voiceName || PANELIST_VOICES[panelistIndex % PANELIST_VOICES.length];
 
       if (!session) {
         const instruction = generatePanelistInstruction(panelistIndex, isIntro);
@@ -329,25 +371,32 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         config: {
           systemInstruction: instruction,
           responseModalities: [Modality.AUDIO],
-          // inputAudioTranscription: {}, // Disabled completely
+          inputAudioTranscription: {},
           outputAudioTranscription: {},
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
             languageCode: 'en-US'
+          },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+              endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+              silenceDurationMs: 2000,
+            }
           }
         },
         callbacks: {
           onopen: () => {
-            console.log(`${panelist.name} session connected`);
+            console.log('[LiveInterview] Gemini session connected:', panelist.name);
           },
           onmessage: async (message: LiveServerMessage) => {
             handleLiveMessage(message, panelist.name);
           },
           onclose: () => {
-            console.log(`${panelist.name} session closed`);
+            console.log('[LiveInterview] Gemini session closed:', panelist.name);
           },
           onerror: (err) => {
-            console.error(`${panelist.name} session error:`, err);
+            console.error('[LiveInterview] Gemini session error:', panelist.name, err);
           }
         }
       });
@@ -358,9 +407,36 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       setActiveSpeaker(panelist.name);
       sessionRef.current = session;
       lastSpeakerChangeRef.current = Date.now();
+      console.log('[LiveInterview] Session active, sessionRef set. Ready for audio.');
+
+      // Trigger model to start speaking
+      if (isIntro) {
+        console.log('[LiveInterview] Sending initial trigger for intro via sendClientContent');
+        try {
+          session.sendClientContent({ turns: 'Please introduce yourself warmly and begin the interview. Start with a greeting, then ask the candidate to tell us about themselves. Keep it soft and welcoming—do not dive into technical or deep questions yet.', turnComplete: true });
+        } catch (e) {
+          console.warn('[LiveInterview] Failed to send initial trigger:', e);
+        }
+      } else {
+        // After panelist switch: provide conversation context and prompt to continue
+        const recentLines = transcriptLinesRef.current.slice(-4).map(line => {
+          const [speaker, ...rest] = line.split('|||');
+          return `${speaker}: ${rest.join('|||')}`;
+        }).join('\n');
+        const diff = candidate.difficulty || 'Medium';
+        const prompt = recentLines
+          ? `Here is the recent conversation:\n${recentLines}\n\nContinue the interview naturally. Follow the progressive flow (intro → base → deep). Match the ${diff} difficulty. Ask your next question in your focus area.`
+          : `Continue the interview. Match the ${diff} difficulty. Ask a base-level question in your focus area.`;
+        console.log(`[LiveInterview] Sending continuation trigger for ${panelist.name}`);
+        try {
+          session.sendClientContent({ turns: prompt, turnComplete: true });
+        } catch (e) {
+          console.warn('[LiveInterview] Failed to send continuation trigger:', e);
+        }
+      }
 
     } catch (error) {
-      console.error('Failed to switch panelist:', error);
+      console.error('[LiveInterview] Failed to switch panelist:', error);
     } finally {
       isSwitchingSessionRef.current = false;
     }
@@ -373,6 +449,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
       if (!apiKey) throw new Error("VITE_GEMINI_API_KEY is not set in environment");
+      console.log('[LiveInterview] Starting session, API key present:', !!apiKey);
 
       const ai = new GoogleGenAI({ apiKey });
       aiRef.current = ai;
@@ -389,18 +466,23 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       inputContextRef.current = inputCtx;
 
+      // Debug: log panelist voice assignments
+      console.log('[LiveInterview] Panelists:', panelists.map(p => `${p.name} -> voiceName: ${p.voiceName || 'MISSING (using fallback)'}`));
+
       // Connect to orchestration WebSocket
       connectOrchestrationWebSocket();
 
       // Start with first panelist using switchToPanelist
       await switchToPanelist(0, true);
       setConnected(true);
+      console.log('[LiveInterview] First panelist connected, starting media streaming');
 
       // Start media streaming after session is ready
       await startMediaStreaming();
+      console.log('[LiveInterview] Media streaming started');
 
     } catch (e) {
-      console.error("Failed to start session:", e);
+      console.error("[LiveInterview] Failed to start session:", e);
     }
   };
 
@@ -513,23 +595,27 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
 
   const startMediaStreaming = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: true
-        },
-        video: true
-      });
-      streamRef.current = stream;
-      setMediaStream(stream);
-      setMicPermission(true);
-      setCameraPermission(true);
+      // Reuse existing stream if already requested (e.g. on mount for setup)
+      let stream = streamRef.current;
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            autoGainControl: true,
+            noiseSuppression: true
+          },
+          video: true
+        });
+        streamRef.current = stream;
+        setMediaStream(stream);
+        setMicPermission(true);
+        setCameraPermission(true);
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
       }
 
       // 1. Audio Streaming
@@ -543,6 +629,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         const source = inputCtx.createMediaStreamSource(stream);
         const workletNode = new AudioWorkletNode(inputCtx, 'audio-processor');
 
+        let audioChunkCount = 0;
         workletNode.port.onmessage = (event) => {
           const inputData = event.data;
           // Create PCM blob from the raw float32 data (input is 16kHz from context)
@@ -551,6 +638,11 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           if (sessionRef.current) {
             markUserAudioChunk();
             sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+            if (++audioChunkCount <= 3 || audioChunkCount % 100 === 0) {
+              console.log('[LiveInterview] Sent user audio chunk to Gemini:', audioChunkCount);
+            }
+          } else if (audioChunkCount === 0) {
+            console.warn('[LiveInterview] No sessionRef when sending audio - session may not be ready');
           }
         };
 
@@ -573,12 +665,16 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         const processor = inputCtx.createScriptProcessor(512, 1, 1);
         processorRef.current = processor;
 
+        let fallbackChunkCount = 0;
         processor.onaudioprocess = (e) => {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcmBlob = createPcmBlob(inputData, 16000);
           if (sessionRef.current) {
             markUserAudioChunk();
             sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+            if (++fallbackChunkCount <= 3) console.log('[LiveInterview] ScriptProcessor: sent audio chunk', fallbackChunkCount);
+          } else if (fallbackChunkCount === 0) {
+            console.warn('[LiveInterview] ScriptProcessor: no sessionRef');
           }
         };
 
@@ -713,10 +809,10 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
             }
           }
 
-          // PRIORITY 2: Fallback rotation after 2-3 questions
+          // PRIORITY 2: Fallback rotation after 4-5 questions
           // Also ensure minimum 5 seconds between switches
           const timeSinceLastSwitch = Date.now() - lastSpeakerChangeRef.current;
-          if (questionCountRef.current >= 2 && timeSinceLastSwitch > 5000) {
+          if (questionCountRef.current >= 4 && timeSinceLastSwitch > 5000) {
             questionCountRef.current = 0;
             const nextIndex = (currentPanelistRef.current + 1) % panelists.length;
 
@@ -740,7 +836,30 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
   // Handle messages from Gemini Live with known panelist name
   const handleLiveMessage = async (message: LiveServerMessage, panelistName?: string) => {
     const audioCtx = audioContextRef.current;
-    if (!audioCtx) return;
+    if (!audioCtx) {
+      console.warn('[LiveInterview] handleLiveMessage: no audioCtx, skipping');
+      return;
+    }
+
+    // Debug: log message structure
+    const count = ++handleLiveMessageCountRef.current;
+    const sc = (message as any).serverContent;
+    const msgKeys = sc ? Object.keys(sc) : [];
+    const hasInputTrans = !!sc?.inputTranscription;
+    const hasOutputTrans = !!sc?.outputTranscription;
+    const hasAudio = !!(sc?.modelTurn?.parts?.length);
+    const hasInterrupted = !!sc?.interrupted;
+    if (count <= 15 || hasInputTrans || hasOutputTrans || hasAudio) {
+      console.log(`[LiveInterview] Message #${count} serverContent keys:`, msgKeys, {
+        inputTranscription: hasInputTrans ? { text: sc?.inputTranscription?.text?.slice(0, 80), finished: sc?.inputTranscription?.finished } : undefined,
+        outputTranscription: hasOutputTrans ? { text: sc?.outputTranscription?.text?.slice(0, 80) } : undefined,
+        audioParts: sc?.modelTurn?.parts?.length ?? 0,
+        interrupted: hasInterrupted,
+      });
+    }
+    if (msgKeys.length === 0 && count <= 5) {
+      console.log('[LiveInterview] Message has no serverContent. Full message:', JSON.stringify(message)?.slice(0, 300));
+    }
 
     // Tier 7: Process audio first for lowest latency - start playback before transcript updates
     const parts = message.serverContent?.modelTurn?.parts ?? [];
@@ -764,9 +883,80 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     }
     if (audioQueueRef.current.length > 0) processAudioQueue();
 
+    // Handle user's speech (inputTranscription) - live user transcription
+    const inputTrans = message.serverContent?.inputTranscription;
+    if (inputTrans) {
+      console.log('[LiveInterview] inputTranscription:', { text: inputTrans.text?.slice(0, 80), finished: inputTrans.finished });
+    }
+    if (inputTrans?.text !== undefined) {
+      const text = inputTrans.text.trim();
+      if (text) {
+        // When user starts speaking, finalize any in-progress AI line (turn boundary)
+        if (!currentUserLineRef.current && currentLineRef.current) {
+          transcriptLinesRef.current.push(`${currentLineRef.current.speaker}|||${currentLineRef.current.content}`);
+          sendTranscriptUpdate('ai', currentLineRef.current.content, currentLineRef.current.speaker);
+          currentLineRef.current = null;
+        }
+
+        // Gemini can send either CUMULATIVE (full text so far) or INCREMENTAL (new chunk only).
+        const lastSeg = lastSegmentTextRef.current;
+        const isNewSegment = !lastSeg;
+
+        if (isNewSegment) {
+          // New segment: record where it starts in the accumulated text
+          segmentStartLenRef.current = currentUserLineRef.current.length;
+          const prefix = currentUserLineRef.current ? currentUserLineRef.current + ' ' : '';
+          currentUserLineRef.current = prefix + text;
+          lastSegmentTextRef.current = text;
+        } else if (text === lastSeg) {
+          // Duplicate - ignore
+        } else if (lastSeg && text.startsWith(lastSeg) && text.length > lastSeg.length) {
+          // CUMULATIVE: Gemini sent full text so far - replace segment with full text
+          const base = currentUserLineRef.current.slice(0, segmentStartLenRef.current);
+          currentUserLineRef.current = (base ? base + ' ' : '') + text;
+          lastSegmentTextRef.current = text;
+        } else {
+          // INCREMENTAL: Gemini sent a new chunk only - append without adding space
+          // (Gemini may send "stu"+"dent" for "student" - adding space would break words)
+          const base = currentUserLineRef.current.slice(0, segmentStartLenRef.current);
+          const existingSegment = currentUserLineRef.current.slice(segmentStartLenRef.current);
+          const toAppend = existingSegment + text;
+          currentUserLineRef.current = (base ? base + ' ' : '') + toAppend.trim();
+          lastSegmentTextRef.current = toAppend.trim();
+        }
+      }
+      if (inputTrans.finished) {
+        // DON'T finalize here - keep accumulating until AI starts speaking.
+        // Just reset segment tracking so next segment appends correctly.
+        lastSegmentTextRef.current = '';
+        segmentStartLenRef.current = 0;
+        // Mark that user has spoken (for turn boundary detection)
+        if (currentUserLineRef.current.trim()) {
+          turnBoundaryRef.current = true;
+        }
+      }
+      const newTranscript = [
+        ...transcriptLinesRef.current,
+        currentUserLineRef.current ? `You|||${currentUserLineRef.current}` : '',
+        currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
+      ].filter(Boolean);
+      pendingTranscriptUpdateRef.current = newTranscript;
+      if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(() => {
+          if (pendingTranscriptUpdateRef.current) {
+            setTranscript(pendingTranscriptUpdateRef.current);
+            pendingTranscriptUpdateRef.current = null;
+            setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+          }
+          rafIdRef.current = null;
+        });
+      }
+    }
+
     // Handle AI's speech (outputTranscription) - what the panelist is saying
     if (message.serverContent?.outputTranscription) {
       const text = message.serverContent.outputTranscription.text?.trim();
+      console.log('[LiveInterview] outputTranscription:', text?.slice(0, 80));
       if (text) {
         // Use provided panelist name (from session) or extract from text prefix
         const match = text.match(/^\[([^\]]+)\]:?\s*/);
@@ -795,21 +985,26 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         // Update active speaker indicator to the known panelist
         setActiveSpeaker(speaker);
 
-        // Check if this is a continuation of the current speaker
-        if (currentLineRef.current?.speaker === speaker) {
-          const currentContent = currentLineRef.current.content;
+        // Check if this is a continuation of the current speaker AND no turn boundary
+        const isSameSpeaker = currentLineRef.current?.speaker === speaker;
+        const hasTurnBoundary = turnBoundaryRef.current;
+
+        if (isSameSpeaker && !hasTurnBoundary) {
+          const currentContent = currentLineRef.current!.content;
 
           // Gemini sends cumulative text - check if new text starts with current content
           if (content.startsWith(currentContent) && content.length > currentContent.length) {
             // Cumulative update - replace with full text
-            currentLineRef.current.content = content;
+            currentLineRef.current!.content = content;
           } else if (!currentContent.includes(content) && content.length > 0) {
             // New chunk - append with space
-            currentLineRef.current.content = currentContent + (currentContent ? ' ' : '') + content;
+            currentLineRef.current!.content = currentContent + (currentContent ? ' ' : '') + content;
           }
           // Otherwise it's a duplicate - ignore
         } else {
-          // New speaker - save previous line and start new one
+          // New speaker OR turn boundary (user spoke in between) - save previous line and start new one
+          turnBoundaryRef.current = false;
+
           if (currentLineRef.current) {
             const finalizedLine = `${currentLineRef.current.speaker}|||${currentLineRef.current.content}`;
             transcriptLinesRef.current.push(finalizedLine);
@@ -817,12 +1012,20 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
             // Send to orchestration server
             sendTranscriptUpdate('ai', currentLineRef.current.content, currentLineRef.current.speaker);
           }
+          // Finalize any in-progress user line when AI starts speaking
+          if (currentUserLineRef.current.trim()) {
+            transcriptLinesRef.current.push(`You|||${currentUserLineRef.current.trim()}`);
+            sendTranscriptUpdate('user', currentUserLineRef.current.trim());
+            currentUserLineRef.current = '';
+            lastSegmentTextRef.current = '';
+          }
           currentLineRef.current = { speaker, content, prefix: '' };
         }
 
-        // Phase 2: Batch transcript updates using requestAnimationFrame
+        // Phase 2: Batch transcript updates using requestAnimationFrame (include live user line if any)
         const newTranscript = [
           ...transcriptLinesRef.current,
+          currentUserLineRef.current ? `You|||${currentUserLineRef.current}` : '',
           currentLineRef.current ? `${currentLineRef.current.speaker}|||${currentLineRef.current.content}` : ''
         ].filter(Boolean);
 
@@ -857,6 +1060,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       currentSourceRef.current = null;
       audioQueueRef.current = [];
       preDecodedBuffersRef.current = [];
+      currentUserLineRef.current = '';
+      lastSegmentTextRef.current = '';
       nextStartTimeRef.current = audioCtx.currentTime;
       isPlayingAudioRef.current = false;
       setIsTalking(false);
@@ -873,15 +1078,27 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     if (processorRef.current) processorRef.current.disconnect();
     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
     if (sessionRef.current) {
-      sessionRef.current.close().catch(() => {});
+      const closeResult = sessionRef.current.close();
+      if (closeResult != null && typeof closeResult.catch === 'function') {
+        closeResult.catch(() => {});
+      }
       sessionRef.current = null;
     }
-    if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close().catch(console.error);
-    if (inputContextRef.current?.state !== 'closed') inputContextRef.current?.close().catch(console.error);
+    if (audioContextRef.current?.state !== 'closed') {
+      const acClose = audioContextRef.current.close();
+      if (acClose != null && typeof acClose.catch === 'function') acClose.catch(console.error);
+    }
+    if (inputContextRef.current?.state !== 'closed') {
+      const icClose = inputContextRef.current.close();
+      if (icClose != null && typeof icClose.catch === 'function') icClose.catch(console.error);
+    }
 
     // Close pre-warmed session if any (Tier 1)
     if (preWarmedSessionRef.current?.session) {
-      preWarmedSessionRef.current.session.close().catch(() => {});
+      const closeResult = preWarmedSessionRef.current.session.close();
+      if (closeResult != null && typeof closeResult.catch === 'function') {
+        closeResult.catch(() => {});
+      }
       preWarmedSessionRef.current = null;
     }
     preWarmInProgressRef.current = null;
@@ -901,9 +1118,21 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       console.warn("[LiveInterview] Error logging latency metrics on stop:", err);
     }
 
+    // Finalize any in-progress lines before sending transcript
+    if (currentUserLineRef.current.trim()) {
+      transcriptLinesRef.current.push(`You|||${currentUserLineRef.current.trim()}`);
+      currentUserLineRef.current = '';
+      lastSegmentTextRef.current = '';
+    }
+    if (currentLineRef.current) {
+      transcriptLinesRef.current.push(`${currentLineRef.current.speaker}|||${currentLineRef.current.content}`);
+      currentLineRef.current = null;
+    }
+    // Use the finalized ref-based transcript (more complete than React state)
+    const finalTranscript = transcriptLinesRef.current;
+
     cleanupResources();
-    cleanupResources();
-    onFinish(transcript.join('\n'), duration, bodyLanguageHistory, emotionHistory);
+    onFinish(finalTranscript.join('\n'), duration, bodyLanguageHistory, emotionHistory);
   };
 
   const toggleMic = () => {
@@ -924,11 +1153,42 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     }
   };
 
+  // Request camera/mic on mount so user can set up before clicking Start
+  const mediaSetupRef = useRef(false);
   useEffect(() => {
-    startSession();
-    return () => cleanupResources();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (mediaSetupRef.current) return;
+    mediaSetupRef.current = true;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, autoGainControl: true, noiseSuppression: true },
+          video: true
+        });
+        streamRef.current = stream;
+        setMediaStream(stream);
+        setMicPermission(true);
+        setCameraPermission(true);
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      } catch (err) {
+        console.error('Failed to get media devices:', err);
+      }
+    })();
   }, []);
+
+  // Guard against React StrictMode double-mount destroying the live session
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!readyToStart) return;
+    if (mountedRef.current) return; // Already started in StrictMode first mount
+    mountedRef.current = true;
+    startSession();
+    return () => {
+      // In StrictMode dev, this fires between the two mounts.
+      // Do NOT clean up here — only clean up on actual unmount (stopInterview).
+      // The ref guard above prevents a second startSession on re-mount.
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyToStart]);
 
   // Video Analysis Hook
   useVideoAnalysis({
@@ -952,6 +1212,36 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       transition={{ duration: 0.5 }}
       className="h-[calc(100vh-6rem)] w-full px-6 grid grid-cols-[15%_1fr_25%] gap-6 overflow-hidden relative py-6"
     >
+      {/* Overlay: Ready to Begin - after setup, before AI starts */}
+      {!readyToStart && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-2xl">
+          <div className="glass rounded-2xl border border-white/20 p-10 max-w-lg w-full text-center shadow-2xl shadow-black/30">
+            <h2 className="text-2xl font-semibold text-gray-200 mb-3">Ready to Begin?</h2>
+            <p className="text-muted-foreground mb-6 text-sm leading-relaxed">
+              Make sure your camera and microphone are working. The AI panel will start once you click the button below.
+            </p>
+
+            <div className="flex items-center justify-center gap-6 mb-8 text-sm text-gray-400">
+              <div className="flex items-center gap-2">
+                <Video className="w-4 h-4" />
+                <span>Camera</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mic className="w-4 h-4" />
+                <span>Microphone</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setReadyToStart(true)}
+              className="px-8 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full font-semibold text-lg transition-all hover:scale-105 active:scale-95 shadow-lg shadow-primary/30"
+            >
+              Start Interview
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Left: 15% - Panelists */}
       <div className="min-w-0 min-h-0 flex flex-col gap-4 h-full">
         {panelists.map((p) => {
@@ -1089,11 +1379,8 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           </div>
           <div className="flex-1 overflow-y-auto space-y-3 pr-1 panel-style-textarea">
             {transcript.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center text-center text-gray-300 space-y-3 px-4">
-                <p className="text-2xl md:text-3xl font-semibold leading-relaxed">
-                  Say hello to start the interview
-                </p>
-                <p className="text-sm text-gray-500">The panel will introduce themselves and ask the first question</p>
+              <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 px-4">
+                <p className="text-sm">Conversation will appear here</p>
               </div>
             )}
             {transcript.map((line, idx) => {

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { apiClient } from '@/src/services/apiClient';
 import { CandidateProfile, ApiError } from '@/types';
 import { CONFIG, ERROR_MESSAGES } from '@/src/constants';
-import { Upload, FileText, Briefcase, Code, GraduationCap, Award } from 'lucide-react';
+import { Upload, FileText, Briefcase, Code, GraduationCap, Award, Sparkles, ChevronRight } from 'lucide-react';
 
 interface Props {
   onUploadComplete: (profile: CandidateProfile) => void;
@@ -138,6 +138,18 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
           Our AI will analyze your experience and tailor interview questions specifically for you.
         </p>
+        {/* Step indicator */}
+        <div className="flex items-center justify-center gap-2 mt-6 text-sm">
+          <span className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${!parsedProfile ? 'bg-primary/20 text-primary font-medium' : 'bg-white/10 text-muted-foreground'}`}>
+            <span className="w-6 h-6 rounded-full bg-primary/30 flex items-center justify-center text-xs font-bold">1</span>
+            Upload & analyze
+          </span>
+          <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
+          <span className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${parsedProfile ? 'bg-primary/20 text-primary font-medium' : 'bg-white/10 text-muted-foreground'}`}>
+            <span className="w-6 h-6 rounded-full bg-primary/30 flex items-center justify-center text-xs font-bold">2</span>
+            Review & confirm
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-16 items-start w-full">
@@ -255,32 +267,46 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
           )}
 
           <div className="px-6 md:px-8 flex flex-col gap-5 pt-6">
-            <button
-              onClick={handleParseResume}
-              disabled={!canParse}
-              className={`w-full inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer ${!canParse ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
-                }`}
-            >
-              {previewLoading ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Parsing...
-                </>
-              ) : (
-                'Continue'
-              )}
-            </button>
-            <button
-              onClick={handleProceed}
-              disabled={!canProceed}
-              className={`w-full inline-flex items-center justify-center gap-2 bg-primary/80 text-primary-foreground shadow-lg hover:bg-primary/70 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer border border-primary/50 ${!canProceed ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
-                }`}
-            >
-              Proceed
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={handleParseResume}
+                disabled={!canParse}
+                className={`w-full inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer ${!canParse ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
+                  }`}
+              >
+                {previewLoading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    Analyze My Resume
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-muted-foreground text-center px-2">
+                AI will extract your experience, skills, and background for a tailored interview
+              </p>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={handleProceed}
+                disabled={!canProceed}
+                className={`w-full inline-flex items-center justify-center gap-2 bg-foreground text-background shadow-lg hover:bg-foreground/90 hover:shadow-xl active:scale-[0.98] transition-all duration-200 h-14 rounded-xl px-8 text-lg font-medium cursor-pointer border border-foreground/20 ${!canProceed ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'pointer-events-auto'
+                  }`}
+              >
+                <ChevronRight className="w-5 h-5" />
+                Confirm & Start Interview Setup
+              </button>
+              <p className="text-xs text-muted-foreground text-center px-2">
+                Review the preview on the right, then go to customize your interview panel
+              </p>
+            </div>
           </div>
         </div>
 
@@ -292,7 +318,7 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
                 <FileText className="w-7 h-7 text-white/60" />
               </div>
               <p className="font-medium text-lg mb-1 text-foreground">Resume preview will appear here</p>
-              <p className="text-sm text-muted-foreground">Upload a file and click Continue to see the parsed preview</p>
+              <p className="text-sm text-muted-foreground">Upload a file and click <strong>Analyze My Resume</strong> to see the preview</p>
             </div>
           ) : selectedFile && !parsedProfile && !previewLoading && !previewError ? (
             <div className="flex flex-col items-center justify-center text-center flex-1">
@@ -300,7 +326,7 @@ export const ResumeUploader: React.FC<Props> = ({ onUploadComplete }) => {
                 <FileText className="w-7 h-7 text-white/60" />
               </div>
               <p className="font-medium text-lg mb-1 text-foreground">Ready to parse</p>
-              <p className="text-sm text-muted-foreground">Enter target role and click Continue to analyze with Gemini</p>
+              <p className="text-sm text-muted-foreground">Enter target role and click <strong>Analyze My Resume</strong> to analyze</p>
             </div>
           ) : previewLoading ? (
             <div className="flex flex-col items-center justify-center text-center flex-1">

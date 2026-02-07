@@ -123,7 +123,7 @@ export const SAMPLE_REPORT: FinalReport = {
     ]
   },
 
-  analysisNote: 'This report includes temporal-spatial analysis of video and audio data. Body language analysis uses simulated data for demonstration purposes to avoid API rate limits. The full AI-powered implementation is available in the codebase.'
+  analysisNote: '⚠️ Body language, voice, temporal, and spatial analysis use sample/demonstration data due to API rate limits on the free tier. Core scores (Technical, Communication, Culture Fit) and panelist feedback are based on your actual interview transcript.'
 };
 
 

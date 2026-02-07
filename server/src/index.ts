@@ -105,6 +105,15 @@ app.post('/api/generate-report', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Candidate profile and transcript are required' });
         }
 
+        // Log transcript stats for debugging
+        const wordCount = transcript.split(/\s+/).filter((w: string) => w.length > 0).length;
+        const lineCount = transcript.split('\n').filter((l: string) => l.trim().length > 0).length;
+        console.log(`[Report Generation] Transcript stats: ${wordCount} words, ${lineCount} lines`);
+        
+        if (wordCount < 50) {
+            console.warn('[Report Generation] WARNING: Very short transcript detected (< 50 words). Scores will reflect minimal engagement.');
+        }
+
         const report = await geminiService.generateFinalReport(candidate, transcript, bodyLanguageHistory, emotionHistory);
 
         res.json(report);

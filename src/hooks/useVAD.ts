@@ -45,14 +45,20 @@ export function useVAD({ enabled, onSpeechEnd, onSpeechStart, stream }: UseVADOp
   // Start VAD when we have stream and are enabled
   useEffect(() => {
     if (enabled && stream && !vad.listening) {
-      vad.start().catch((err) => console.warn('VAD start failed:', err));
+      const startResult = vad.start?.();
+      if (startResult != null && typeof startResult.catch === 'function') {
+        startResult.catch((err: unknown) => console.warn('VAD start failed:', err));
+      }
     }
   }, [enabled, stream, vad.listening, vad.start]);
 
   // Pause VAD when disabled
   useEffect(() => {
     if (!enabled && vad.listening) {
-      vad.pause().catch(() => {});
+      const pauseResult = vad.pause?.();
+      if (pauseResult != null && typeof pauseResult.catch === 'function') {
+        pauseResult.catch(() => {});
+      }
     }
   }, [enabled, vad.listening, vad.pause]);
 

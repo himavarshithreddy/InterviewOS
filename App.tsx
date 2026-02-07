@@ -24,7 +24,8 @@ import {
     Shield,
     Upload,
     Play,
-    RotateCcw
+    RotateCcw,
+    AlertCircle
 } from 'lucide-react';
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
     const [finalReport, setFinalReport] = useState<FinalReport | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [interviewTooShort, setInterviewTooShort] = useState(false);
+    const [reportError, setReportError] = useState<string | null>(null);
     const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
     const [cursorActive, setCursorActive] = useState(false);
 
@@ -50,6 +52,7 @@ function App() {
             setPanelists([]);
             setFinalReport(null);
             setInterviewTooShort(false);
+            setReportError(null);
             sessionStorage.clearAll();
             hasRestoredRef.current = false; // Allow restoration if they navigate away and come back (though data is cleared so it won't matter)
         }
@@ -123,10 +126,12 @@ function App() {
         setInterviewTooShort(false);
 
         try {
+            setReportError(null);
             const report = await apiClient.generateReport(candidate, transcript, bodyLanguageHistory, emotionHistory);
             setFinalReport(report);
         } catch (error: any) {
             console.error('Error generating report:', error);
+            setReportError(error?.message || 'Failed to generate evaluation report. Please try again.');
         } finally {
             setIsProcessing(false);
         }
@@ -137,6 +142,7 @@ function App() {
         setFinalReport(null);
         setPanelists([]);
         setInterviewTooShort(false);
+        setReportError(null);
         sessionStorage.clearAll();
     };
 
@@ -292,6 +298,8 @@ function App() {
                                         <EvaluationLoadingScreen />
                                     ) : interviewTooShort ? (
                                         <ShortInterviewScreen onRestart={restart} />
+                                    ) : reportError ? (
+                                        <ReportErrorScreen error={reportError} onRestart={restart} />
                                     ) : finalReport ? (
                                         <Dashboard report={finalReport} onRestart={restart} />
                                     ) : (
@@ -664,6 +672,50 @@ const ShortInterviewScreen: React.FC<ShortInterviewScreenProps> = ({ onRestart }
                                 Open Sample Report
                             </button>
                         </div>
+                    </div>
+                </div>
+            </section>
+        </motion.div>
+    );
+};
+
+interface ReportErrorScreenProps {
+    error: string;
+    onRestart: () => void;
+}
+
+const ReportErrorScreen: React.FC<ReportErrorScreenProps> = ({ error, onRestart }) => {
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5 }}
+            className="flex items-center justify-center min-h-[calc(100vh-6rem)] py-12 px-6"
+        >
+            <section className="w-full max-w-xl mx-auto">
+                <div className="relative overflow-hidden rounded-2xl border border-destructive/30 bg-gradient-to-b from-destructive/[0.06] to-transparent p-10 md:p-14 shadow-2xl shadow-black/20">
+                    <div className="relative flex flex-col items-center text-center">
+                        <div className="relative mb-10">
+                            <div className="absolute -inset-4 bg-destructive/15 rounded-2xl blur-2xl" />
+                            <div className="relative flex items-center justify-center w-20 h-20 rounded-2xl bg-destructive/10 border border-destructive/20">
+                                <AlertCircle className="w-10 h-10 text-destructive" />
+                            </div>
+                        </div>
+                        <h2 className="text-2xl md:text-3xl font-semibold text-foreground mb-3 tracking-tight">
+                            Evaluation Failed
+                        </h2>
+                        <p className="text-gray-400 text-base md:text-lg max-w-sm leading-relaxed mb-8">
+                            {error}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={onRestart}
+                            className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-medium rounded-xl hover:bg-primary/90 transition-all shadow-lg"
+                        >
+                            <RotateCcw className="w-5 h-5" />
+                            Start New Session
+                        </button>
                     </div>
                 </div>
             </section>

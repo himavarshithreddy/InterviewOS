@@ -22,15 +22,22 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
         openReportInNewTab();
     };
 
+    // Ensure required arrays exist with defaults
+    const safeReport = {
+        ...report,
+        improvements: report.improvements || [],
+        panelistComments: report.panelistComments || [],
+    };
+
     const chartData = [
-        { subject: 'Technical', A: report.technicalScore, fullMark: 100 },
-        { subject: 'Communication', A: report.communicationScore, fullMark: 100 },
-        { subject: 'Culture Fit', A: report.cultureFitScore, fullMark: 100 },
-        { subject: 'Problem Solving', A: (report.technicalScore + report.communicationScore) / 2, fullMark: 100 },
-        { subject: 'Confidence', A: report.cultureFitScore, fullMark: 100 },
+        { subject: 'Technical', A: safeReport.technicalScore, fullMark: 100 },
+        { subject: 'Communication', A: safeReport.communicationScore, fullMark: 100 },
+        { subject: 'Culture Fit', A: safeReport.cultureFitScore, fullMark: 100 },
+        { subject: 'Problem Solving', A: (safeReport.technicalScore + safeReport.communicationScore) / 2, fullMark: 100 },
+        { subject: 'Confidence', A: safeReport.cultureFitScore, fullMark: 100 },
     ];
 
-    const averageScore = Math.round((report.technicalScore + report.communicationScore + report.cultureFitScore) / 3);
+    const averageScore = Math.round((safeReport.technicalScore + safeReport.communicationScore + safeReport.cultureFitScore) / 3);
 
     const getGrade = (score: number) => {
         if (score >= 90) return { label: 'Excellent', color: 'text-primary', bg: 'bg-primary/10' };
@@ -137,7 +144,7 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                         </h3>
                         <div className="prose prose-invert prose-sm max-w-none text-gray-400">
                             <p className="whitespace-pre-line leading-relaxed">
-                                {report.detailedFeedback}
+                                {safeReport.detailedFeedback}
                             </p>
                         </div>
                     </div>
@@ -150,7 +157,7 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                             Suggested Improvements
                         </h3>
                         <ul className="space-y-4">
-                            {report.improvements.map((imp, idx) => (
+                            {safeReport.improvements.map((imp, idx) => (
                                 <motion.li
                                     initial={{ opacity: 0, x: -10 }}
                                     animate={{ opacity: 1, x: 0 }}
@@ -167,42 +174,42 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                 </div>
             </section>
 
-            {/* Analysis Overview Note */}
-            {report.analysisNote && (
-                <section className="glass rounded-2xl border border-white/20 px-8 py-6 shadow-lg shadow-black/20">
+            {/* Sample Data Warning */}
+            {safeReport.analysisNote && (
+                <section className="glass rounded-2xl border border-amber-500/30 px-8 py-6 shadow-lg shadow-black/20 bg-amber-500/5">
                     <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                            <FileText className="w-4 h-4 text-primary" />
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <FileText className="w-4 h-4 text-amber-400" />
                         </div>
                         <div>
-                            <h3 className="text-sm font-semibold text-gray-200 mb-1">Analysis Methodology</h3>
-                            <p className="text-sm text-gray-400 leading-relaxed">{report.analysisNote}</p>
+                            <h3 className="text-sm font-semibold text-amber-200 mb-1">Data Notice</h3>
+                            <p className="text-sm text-gray-300 leading-relaxed">{safeReport.analysisNote}</p>
                         </div>
                     </div>
                 </section>
             )}
 
             {/* Comprehensive Analysis Sections */}
-            {(report.bodyLanguageAnalysis || report.emotionAnalysis || report.speechPatterns) && (
+            {(safeReport.bodyLanguageAnalysis || safeReport.emotionAnalysis || safeReport.speechPatterns) && (
                 <section className="glass rounded-2xl border border-white/20 px-8 py-10 shadow-lg shadow-black/20">
                     <h2 className="text-2xl font-semibold text-gray-200 mb-8">Comprehensive Analysis</h2>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
                         {/* Body Language Analysis */}
-                        {report.bodyLanguageAnalysis && (
+                        {safeReport.bodyLanguageAnalysis && (
                             <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-lg font-semibold text-gray-200">Body Language</h3>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-3xl font-mono font-bold text-primary">{report.bodyLanguageAnalysis.overallScore}</span>
+                                        <span className="text-3xl font-mono font-bold text-primary">{safeReport.bodyLanguageAnalysis.overallScore}</span>
                                         <span className="text-sm text-gray-400">/100</span>
-                                        <span className={`ml-2 px-2 py-1 rounded text-xs font-bold ${report.bodyLanguageAnalysis.grade === 'A' ? 'bg-primary/10 text-primary' :
-                                                report.bodyLanguageAnalysis.grade === 'B' ? 'bg-primary/10 text-primary' :
-                                                    report.bodyLanguageAnalysis.grade === 'C' ? 'bg-accent/10 text-accent' :
+                                        <span className={`ml-2 px-2 py-1 rounded text-xs font-bold ${safeReport.bodyLanguageAnalysis.grade === 'A' ? 'bg-primary/10 text-primary' :
+                                                safeReport.bodyLanguageAnalysis.grade === 'B' ? 'bg-primary/10 text-primary' :
+                                                    safeReport.bodyLanguageAnalysis.grade === 'C' ? 'bg-accent/10 text-accent' :
                                                         'bg-destructive/10 text-destructive'
                                             }`}>
-                                            {report.bodyLanguageAnalysis.grade}
+                                            {safeReport.bodyLanguageAnalysis.grade}
                                         </span>
                                     </div>
                                 </div>
@@ -212,56 +219,56 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Posture</span>
-                                            <span className="text-sm font-mono text-primary">{Math.round(report.bodyLanguageAnalysis.posture.score * 100)}%</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(safeReport.bodyLanguageAnalysis.posture.score * 100)}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
-                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.bodyLanguageAnalysis.posture.score * 100}%` }}></div>
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${safeReport.bodyLanguageAnalysis.posture.score * 100}%` }}></div>
                                         </div>
-                                        <p className="text-xs text-gray-400">{report.bodyLanguageAnalysis.posture.recommendation}</p>
+                                        <p className="text-xs text-gray-400">{safeReport.bodyLanguageAnalysis.posture.recommendation}</p>
                                     </div>
 
                                     {/* Eye Contact */}
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Eye Contact</span>
-                                            <span className="text-sm font-mono text-primary">{report.bodyLanguageAnalysis.eyeContact.percentage}%</span>
+                                            <span className="text-sm font-mono text-primary">{safeReport.bodyLanguageAnalysis.eyeContact.percentage}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
-                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.bodyLanguageAnalysis.eyeContact.percentage}%` }}></div>
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${safeReport.bodyLanguageAnalysis.eyeContact.percentage}%` }}></div>
                                         </div>
-                                        <p className="text-xs text-gray-400">{report.bodyLanguageAnalysis.eyeContact.recommendation}</p>
+                                        <p className="text-xs text-gray-400">{safeReport.bodyLanguageAnalysis.eyeContact.recommendation}</p>
                                     </div>
 
                                     {/* Gestures */}
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Gestures</span>
-                                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{report.bodyLanguageAnalysis.gestures.frequency}</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{safeReport.bodyLanguageAnalysis.gestures.frequency}</span>
                                         </div>
-                                        <p className="text-xs text-gray-400 mt-2">{report.bodyLanguageAnalysis.gestures.recommendation}</p>
+                                        <p className="text-xs text-gray-400 mt-2">{safeReport.bodyLanguageAnalysis.gestures.recommendation}</p>
                                     </div>
 
                                     {/* Facial Expression */}
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Facial Expression Variety</span>
-                                            <span className="text-sm font-mono text-primary">{Math.round(report.bodyLanguageAnalysis.facialExpression.variety * 100)}%</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(safeReport.bodyLanguageAnalysis.facialExpression.variety * 100)}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5 mb-2">
-                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.bodyLanguageAnalysis.facialExpression.variety * 100}%` }}></div>
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${safeReport.bodyLanguageAnalysis.facialExpression.variety * 100}%` }}></div>
                                         </div>
-                                        <p className="text-xs text-gray-400">{report.bodyLanguageAnalysis.facialExpression.recommendation}</p>
+                                        <p className="text-xs text-gray-400">{safeReport.bodyLanguageAnalysis.facialExpression.recommendation}</p>
                                     </div>
                                 </div>
 
                                 {/* Strengths & Improvements */}
-                                {(report.bodyLanguageAnalysis.strengths.length > 0 || report.bodyLanguageAnalysis.improvements.length > 0) && (
+                                {((safeReport.bodyLanguageAnalysis.strengths || []).length > 0 || (safeReport.bodyLanguageAnalysis.improvements || []).length > 0) && (
                                     <div className="mt-4 pt-4 border-t border-white/10">
-                                        {report.bodyLanguageAnalysis.strengths.length > 0 && (
+                                        {(safeReport.bodyLanguageAnalysis.strengths || []).length > 0 && (
                                             <div className="mb-3">
                                                 <h4 className="text-xs font-semibold text-gray-300 mb-2">Strengths</h4>
                                                 <ul className="space-y-1">
-                                                    {report.bodyLanguageAnalysis.strengths.map((strength, idx) => (
+                                                    {(safeReport.bodyLanguageAnalysis.strengths || []).map((strength, idx) => (
                                                         <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
                                                             <CheckCircle className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
                                                             <span>{strength}</span>
@@ -270,11 +277,11 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                                 </ul>
                                             </div>
                                         )}
-                                        {report.bodyLanguageAnalysis.improvements.length > 0 && (
+                                        {(safeReport.bodyLanguageAnalysis.improvements || []).length > 0 && (
                                             <div>
                                                 <h4 className="text-xs font-semibold text-gray-300 mb-2">Areas to Improve</h4>
                                                 <ul className="space-y-1">
-                                                    {report.bodyLanguageAnalysis.improvements.map((improvement, idx) => (
+                                                    {(safeReport.bodyLanguageAnalysis.improvements || []).map((improvement, idx) => (
                                                         <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
                                                             <ArrowRight className="w-3 h-3 text-accent flex-shrink-0 mt-0.5" />
                                                             <span>{improvement}</span>
@@ -289,7 +296,7 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                         )}
 
                         {/* Emotion & Sentiment Analysis */}
-                        {report.emotionAnalysis && (
+                        {safeReport.emotionAnalysis && (
                             <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
                                 <h3 className="text-lg font-semibold text-gray-200 mb-6">Emotion & Sentiment</h3>
 
@@ -298,10 +305,10 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Confidence</span>
-                                            <span className="text-sm font-mono text-primary">{Math.round(report.emotionAnalysis.averageConfidence * 100)}%</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(safeReport.emotionAnalysis.averageConfidence * 100)}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5">
-                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.emotionAnalysis.averageConfidence * 100}%` }}></div>
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${safeReport.emotionAnalysis.averageConfidence * 100}%` }}></div>
                                         </div>
                                     </div>
 
@@ -309,10 +316,10 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Enthusiasm</span>
-                                            <span className="text-sm font-mono text-primary">{Math.round(report.emotionAnalysis.averageEnthusiasm * 100)}%</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(safeReport.emotionAnalysis.averageEnthusiasm * 100)}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5">
-                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.emotionAnalysis.averageEnthusiasm * 100}%` }}></div>
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${safeReport.emotionAnalysis.averageEnthusiasm * 100}%` }}></div>
                                         </div>
                                     </div>
 
@@ -320,10 +327,10 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Nervousness</span>
-                                            <span className="text-sm font-mono text-accent">{Math.round(report.emotionAnalysis.averageNervousness * 100)}%</span>
+                                            <span className="text-sm font-mono text-accent">{Math.round(safeReport.emotionAnalysis.averageNervousness * 100)}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5">
-                                            <div className="bg-accent h-1.5 rounded-full" style={{ width: `${report.emotionAnalysis.averageNervousness * 100}%` }}></div>
+                                            <div className="bg-accent h-1.5 rounded-full" style={{ width: `${safeReport.emotionAnalysis.averageNervousness * 100}%` }}></div>
                                         </div>
                                     </div>
 
@@ -331,18 +338,18 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-sm font-medium text-gray-300">Overall Sentiment</span>
-                                            <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${report.emotionAnalysis.overallSentiment === 'positive' ? 'bg-primary/10 text-primary' :
-                                                    report.emotionAnalysis.overallSentiment === 'negative' ? 'bg-destructive/10 text-destructive' :
+                                            <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${safeReport.emotionAnalysis.overallSentiment === 'positive' ? 'bg-primary/10 text-primary' :
+                                                    safeReport.emotionAnalysis.overallSentiment === 'negative' ? 'bg-destructive/10 text-destructive' :
                                                         'bg-white/10 text-gray-300'
                                                 }`}>
-                                                {report.emotionAnalysis.overallSentiment}
+                                                {safeReport.emotionAnalysis.overallSentiment}
                                             </span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5">
-                                            <div className={`h-1.5 rounded-full ${report.emotionAnalysis.sentimentScore > 0 ? 'bg-primary' :
-                                                    report.emotionAnalysis.sentimentScore < 0 ? 'bg-destructive' :
+                                            <div className={`h-1.5 rounded-full ${safeReport.emotionAnalysis.sentimentScore > 0 ? 'bg-primary' :
+                                                    safeReport.emotionAnalysis.sentimentScore < 0 ? 'bg-destructive' :
                                                         'bg-gray-400'
-                                                }`} style={{ width: `${Math.abs(report.emotionAnalysis.sentimentScore) * 100}%` }}></div>
+                                                }`} style={{ width: `${Math.abs(safeReport.emotionAnalysis.sentimentScore) * 100}%` }}></div>
                                         </div>
                                     </div>
 
@@ -352,26 +359,26 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                         <div className="grid grid-cols-3 gap-2 text-xs">
                                             <div>
                                                 <span className="text-gray-400">Pace:</span>
-                                                <span className="ml-1 text-gray-200 capitalize">{report.emotionAnalysis.voiceCharacteristics.pace}</span>
+                                                <span className="ml-1 text-gray-200 capitalize">{safeReport.emotionAnalysis.voiceCharacteristics.pace}</span>
                                             </div>
                                             <div>
                                                 <span className="text-gray-400">Clarity:</span>
-                                                <span className="ml-1 text-gray-200">{Math.round(report.emotionAnalysis.voiceCharacteristics.clarity * 100)}%</span>
+                                                <span className="ml-1 text-gray-200">{Math.round(safeReport.emotionAnalysis.voiceCharacteristics.clarity * 100)}%</span>
                                             </div>
                                             <div>
                                                 <span className="text-gray-400">Volume:</span>
-                                                <span className="ml-1 text-gray-200 capitalize">{report.emotionAnalysis.voiceCharacteristics.volume}</span>
+                                                <span className="ml-1 text-gray-200 capitalize">{safeReport.emotionAnalysis.voiceCharacteristics.volume}</span>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Recommendations */}
-                                {report.emotionAnalysis.recommendations.length > 0 && (
+                                {(safeReport.emotionAnalysis.recommendations || []).length > 0 && (
                                     <div className="mt-4 pt-4 border-t border-white/10">
                                         <h4 className="text-xs font-semibold text-gray-300 mb-2">Key Insights</h4>
                                         <ul className="space-y-1">
-                                            {report.emotionAnalysis.recommendations.map((rec, idx) => (
+                                            {(safeReport.emotionAnalysis.recommendations || []).map((rec, idx) => (
                                                 <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
                                                     <CheckCircle className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
                                                     <span>{rec}</span>
@@ -384,7 +391,7 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                         )}
 
                         {/* Speech Patterns */}
-                        {report.speechPatterns && (
+                        {safeReport.speechPatterns && (
                             <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
                                 <h3 className="text-lg font-semibold text-gray-200 mb-6">Speech Patterns</h3>
 
@@ -393,7 +400,7 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Speaking Pace</span>
-                                            <span className="text-sm font-mono text-primary">{report.speechPatterns.averagePace} WPM</span>
+                                            <span className="text-sm font-mono text-primary">{safeReport.speechPatterns.averagePace} WPM</span>
                                         </div>
                                         <p className="text-xs text-gray-400 mt-1">Optimal range: 130-160 words per minute</p>
                                     </div>
@@ -402,10 +409,10 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-300">Clarity Score</span>
-                                            <span className="text-sm font-mono text-primary">{Math.round(report.speechPatterns.clarityScore * 100)}%</span>
+                                            <span className="text-sm font-mono text-primary">{Math.round(safeReport.speechPatterns.clarityScore * 100)}%</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-1.5">
-                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${report.speechPatterns.clarityScore * 100}%` }}></div>
+                                            <div className="bg-primary h-1.5 rounded-full" style={{ width: `${safeReport.speechPatterns.clarityScore * 100}%` }}></div>
                                         </div>
                                     </div>
 
@@ -413,10 +420,10 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-sm font-medium text-gray-300">Filler Words</span>
-                                            <span className="text-sm font-mono text-accent">{report.speechPatterns.fillerWordCount}</span>
+                                            <span className="text-sm font-mono text-accent">{safeReport.speechPatterns.fillerWordCount}</span>
                                         </div>
                                         <div className="flex flex-wrap gap-1">
-                                            {report.speechPatterns.fillerWords.map((word, idx) => (
+                                            {(safeReport.speechPatterns.fillerWords || []).map((word, idx) => (
                                                 <span key={idx} className="text-xs px-2 py-0.5 rounded bg-white/10 text-gray-400">
                                                     {word}
                                                 </span>
@@ -427,16 +434,16 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                     {/* Pause Analysis */}
                                     <div className="p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                         <h4 className="text-xs font-semibold text-gray-300 mb-1">Pause Analysis</h4>
-                                        <p className="text-xs text-gray-400">{report.speechPatterns.pauseAnalysis}</p>
+                                        <p className="text-xs text-gray-400">{safeReport.speechPatterns.pauseAnalysis}</p>
                                     </div>
                                 </div>
 
                                 {/* Recommendations */}
-                                {report.speechPatterns.recommendations.length > 0 && (
+                                {(safeReport.speechPatterns.recommendations || []).length > 0 && (
                                     <div className="mt-4 pt-4 border-t border-white/10">
                                         <h4 className="text-xs font-semibold text-gray-300 mb-2">Recommendations</h4>
                                         <ul className="space-y-1">
-                                            {report.speechPatterns.recommendations.map((rec, idx) => (
+                                            {(safeReport.speechPatterns.recommendations || []).map((rec, idx) => (
                                                 <li key={idx} className="text-xs text-gray-400 flex items-start gap-2">
                                                     <ArrowRight className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
                                                     <span>{rec}</span>
@@ -449,7 +456,14 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                         )}
 
                         {/* Temporal Trends */}
-                        {report.temporalTrends && (
+                        {safeReport.temporalTrends && (() => {
+                            const ct = safeReport.temporalTrends.confidenceTrend || [];
+                            const nt = safeReport.temporalTrends.nervousnessTrend || [];
+                            const et = safeReport.temporalTrends.engagementTrend || [];
+                            if (ct.length === 0 || nt.length === 0 || et.length === 0) return null;
+                            const mid = Math.floor(ct.length / 2);
+                            const getVal = (arr: { value: number }[], i: number) => (arr[i]?.value ?? 0.5) * 100;
+                            return (
                             <div className="glass rounded-xl border border-white/20 p-6 hover:border-primary/40 transition-all shadow-lg shadow-black/20">
                                 <h3 className="text-lg font-semibold text-gray-200 mb-6">Performance Over Time</h3>
 
@@ -458,21 +472,21 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                         <BarChart data={[
                                             {
                                                 name: 'Start',
-                                                Confidence: Math.round(report.temporalTrends.confidenceTrend[0].value * 100),
-                                                Nervousness: Math.round(report.temporalTrends.nervousnessTrend[0].value * 100),
-                                                Engagement: Math.round(report.temporalTrends.engagementTrend[0].value * 100)
+                                                Confidence: Math.round(getVal(ct, 0)),
+                                                Nervousness: Math.round(getVal(nt, 0)),
+                                                Engagement: Math.round(getVal(et, 0))
                                             },
                                             {
                                                 name: 'Mid',
-                                                Confidence: Math.round(report.temporalTrends.confidenceTrend[Math.floor(report.temporalTrends.confidenceTrend.length / 2)].value * 100),
-                                                Nervousness: Math.round(report.temporalTrends.nervousnessTrend[Math.floor(report.temporalTrends.nervousnessTrend.length / 2)].value * 100),
-                                                Engagement: Math.round(report.temporalTrends.engagementTrend[Math.floor(report.temporalTrends.engagementTrend.length / 2)].value * 100)
+                                                Confidence: Math.round(getVal(ct, mid)),
+                                                Nervousness: Math.round(getVal(nt, mid)),
+                                                Engagement: Math.round(getVal(et, mid))
                                             },
                                             {
                                                 name: 'End',
-                                                Confidence: Math.round(report.temporalTrends.confidenceTrend[report.temporalTrends.confidenceTrend.length - 1].value * 100),
-                                                Nervousness: Math.round(report.temporalTrends.nervousnessTrend[report.temporalTrends.nervousnessTrend.length - 1].value * 100),
-                                                Engagement: Math.round(report.temporalTrends.engagementTrend[report.temporalTrends.engagementTrend.length - 1].value * 100)
+                                                Confidence: Math.round(getVal(ct, ct.length - 1)),
+                                                Nervousness: Math.round(getVal(nt, nt.length - 1)),
+                                                Engagement: Math.round(getVal(et, et.length - 1))
                                             }
                                         ]}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
@@ -497,15 +511,15 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
                                 <div className="mt-4 p-3 rounded-lg bg-white/[0.04] border border-white/10">
                                     <p className="text-xs text-gray-400">
                                         <span className="font-semibold text-gray-300">Trend Analysis:</span> {
-                                            report.temporalTrends.confidenceTrend[report.temporalTrends.confidenceTrend.length - 1].value >
-                                                report.temporalTrends.confidenceTrend[0].value
+                                            ct[ct.length - 1]?.value > ct[0]?.value
                                                 ? 'Confidence improved throughout the interview, showing good adaptation and comfort.'
                                                 : 'Confidence remained steady, demonstrating consistent performance.'
                                         }
                                     </p>
                                 </div>
                             </div>
-                        )}
+                            );
+                        })()}
 
                     </div>
                 </section>
@@ -515,7 +529,7 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
             <section className="glass rounded-2xl border border-white/20 px-8 py-10 shadow-lg shadow-black/20">
                 <h2 className="text-2xl font-semibold text-gray-200 mb-8">Panelist Remarks</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {report.panelistComments.map((pc, idx) => (
+                    {safeReport.panelistComments.map((pc, idx) => (
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -573,3 +587,4 @@ export const Dashboard: React.FC<Props> = ({ report, onRestart }) => {
         </motion.div>
     );
 };
+

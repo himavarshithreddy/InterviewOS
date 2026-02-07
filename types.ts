@@ -37,6 +37,7 @@ export interface Panelist {
   focus: string;
   avatarColor: string;
   description: string;
+  voiceName?: string;
 }
 
 export interface EvaluationMetric {

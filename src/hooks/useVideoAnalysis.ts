@@ -10,6 +10,7 @@ interface UseVideoAnalysisProps {
 export const useVideoAnalysis = ({ stream, isRecording, onAnalysisResult }: UseVideoAnalysisProps) => {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const isAnalyzingRef = useRef(false); // Ref to guard against overlapping requests
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     /**
@@ -34,6 +35,8 @@ export const useVideoAnalysis = ({ stream, isRecording, onAnalysisResult }: UseV
      */
     const captureAndAnalyze = useCallback(async () => {
         if (!stream || !isRecording) return;
+        // Skip if a previous analysis is still in flight
+        if (isAnalyzingRef.current) return;
 
         // Create a new recorder for this segment to ensure valid headers
         const recorder = new MediaRecorder(stream, {
@@ -60,19 +63,18 @@ export const useVideoAnalysis = ({ stream, isRecording, onAnalysisResult }: UseV
                 // Let's do Body Language primarily as it needs video.
 
                 setIsAnalyzing(true);
+                isAnalyzingRef.current = true;
                 const bodyAnalysis = await apiClient.analyzeBodyLanguage(base64Data);
                 if (onAnalysisResult) {
                     onAnalysisResult('body_language', bodyAnalysis);
                 }
 
-                // Optional: Emotion analysis handles video too now
-                // const emotionAnalysis = await apiClient.analyzeEmotion({ transcript: '', videoData: base64Data });
-                // if (onAnalysisResult) onAnalysisResult('emotion', emotionAnalysis);
-
             } catch (error) {
-                console.error('Video analysis failed:', error);
+                // Silently ignore timeout/network errors during interview
+                console.warn('Video analysis skipped:', (error as Error)?.message?.slice(0, 80));
             } finally {
                 setIsAnalyzing(false);
+                isAnalyzingRef.current = false;
             }
         };
 
