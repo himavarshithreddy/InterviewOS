@@ -9,7 +9,7 @@ import { Dashboard } from './components/Dashboard';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { apiClient } from './src/services/apiClient';
 import { sessionStorage } from './src/utils/sessionStorage';
-import { SAMPLE_REPORT } from './src/utils/reportDownload';
+import { SAMPLE_REPORT, openReportInNewTab } from './src/utils/reportDownload';
 import { MIN_INTERVIEW_DURATION_SECONDS } from './src/constants';
 import {
     Sparkles,
@@ -650,14 +650,24 @@ const ShortInterviewScreen: React.FC<ShortInterviewScreenProps> = ({ onRestart }
                             Your interview ended before 5 minutes. To receive a full evaluation,
                             please stay on the call for at least 5 minutes next time.
                         </p>
-                        <button
-                            type="button"
-                            onClick={onRestart}
-                            className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-medium rounded-xl hover:bg-primary/90 transition-all shadow-lg flex items-center gap-2"
-                        >
-                            <RotateCcw className="w-5 h-5" />
-                            Start New Session
-                        </button>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 flex-wrap">
+                            <button
+                                type="button"
+                                onClick={onRestart}
+                                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-primary text-primary-foreground font-medium rounded-xl hover:bg-primary/90 transition-all shadow-lg flex items-center gap-2"
+                            >
+                                <RotateCcw className="w-5 h-5" />
+                                Start New Session
+                            </button>
+                            <button
+                                type="button"
+                                onClick={openReportInNewTab}
+                                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-transparent border border-white/20 text-gray-200 font-medium rounded-xl hover:bg-white/[0.06] hover:border-white/30 transition-all flex items-center gap-2"
+                            >
+                                <FileText className="w-5 h-5" />
+                                Open Sample Report
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>

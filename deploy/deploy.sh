@@ -1,6 +1,9 @@
 #!/bin/bash
 # Deploy script - run on the droplet after initial setup
 # Usage: ./deploy.sh [path to InterviewOS, default: /var/www/InterviewOS]
+#
+# One-time setup for simpler command - run from anywhere with just: deploy
+#   sudo ln -sf /var/www/InterviewOS/deploy/deploy.sh /usr/local/bin/deploy
 
 set -e
 DIR="${1:-/var/www/InterviewOS}"
