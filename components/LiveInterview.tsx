@@ -91,7 +91,7 @@ export const LiveInterview: React.FC<Props> = ({ candidate, panelists, onFinish 
   const ORCHESTRATION_THROTTLE_MS = 500; // Tier 5: Reduced from 2000ms for fresher hints
 
   // Ref for handleLiveMessage (used by pre-warmed sessions before fn is defined)
-  const handleLiveMessageRef = useRef<(message: LiveServerMessage, panelistName?: string) => void>(() => {});
+  const handleLiveMessageRef = useRef<(message: LiveServerMessage, panelistName?: string) => void>(() => { });
 
   const handleLiveMessageCountRef = useRef(0);
 
@@ -301,11 +301,11 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         }
       },
       callbacks: {
-        onopen: () => {},
+        onopen: () => { },
         onmessage: async (message: LiveServerMessage) => {
           handleLiveMessageRef.current(message, panelistName);
         },
-        onclose: () => {},
+        onclose: () => { },
         onerror: () => { preWarmInProgressRef.current = null; }
       }
     }).then((session: any) => {
@@ -367,39 +367,39 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
         console.log(`Switching to panelist: ${panelist.name} with voice: ${voice}`);
 
         session = await aiRef.current.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          systemInstruction: instruction,
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
-            languageCode: 'en-US'
+          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+          config: {
+            systemInstruction: instruction,
+            responseModalities: [Modality.AUDIO],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
+              languageCode: 'en-US'
+            },
+            realtimeInputConfig: {
+              automaticActivityDetection: {
+                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+                silenceDurationMs: 2000,
+              }
+            }
           },
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
-              endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-              silenceDurationMs: 2000,
+          callbacks: {
+            onopen: () => {
+              console.log('[LiveInterview] Gemini session connected:', panelist.name);
+            },
+            onmessage: async (message: LiveServerMessage) => {
+              handleLiveMessage(message, panelist.name);
+            },
+            onclose: () => {
+              console.log('[LiveInterview] Gemini session closed:', panelist.name);
+            },
+            onerror: (err) => {
+              console.error('[LiveInterview] Gemini session error:', panelist.name, err);
             }
           }
-        },
-        callbacks: {
-          onopen: () => {
-            console.log('[LiveInterview] Gemini session connected:', panelist.name);
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            handleLiveMessage(message, panelist.name);
-          },
-          onclose: () => {
-            console.log('[LiveInterview] Gemini session closed:', panelist.name);
-          },
-          onerror: (err) => {
-            console.error('[LiveInterview] Gemini session error:', panelist.name, err);
-          }
-        }
-      });
+        });
       }
 
       currentPanelistRef.current = panelistIndex;
@@ -898,38 +898,55 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
           currentLineRef.current = null;
         }
 
-        // Gemini can send either CUMULATIVE (full text so far) or INCREMENTAL (new chunk only).
+        // Track text within current segment - Gemini typically sends CUMULATIVE text
+        // (full text so far), but may occasionally send incremental chunks
         const lastSeg = lastSegmentTextRef.current;
         const isNewSegment = !lastSeg;
 
         if (isNewSegment) {
-          // New segment: record where it starts in the accumulated text
-          segmentStartLenRef.current = currentUserLineRef.current.length;
-          const prefix = currentUserLineRef.current ? currentUserLineRef.current + ' ' : '';
-          currentUserLineRef.current = prefix + text;
+          // NEW SEGMENT: Text after a finished:true or first text of the turn
+          // segmentStartLenRef marks where this segment starts in accumulated text
+          const separator = currentUserLineRef.current.length > 0 ? ' ' : '';
+          currentUserLineRef.current = currentUserLineRef.current + separator + text;
           lastSegmentTextRef.current = text;
+          segmentStartLenRef.current = currentUserLineRef.current.length - text.length;
         } else if (text === lastSeg) {
-          // Duplicate - ignore
-        } else if (lastSeg && text.startsWith(lastSeg) && text.length > lastSeg.length) {
-          // CUMULATIVE: Gemini sent full text so far - replace segment with full text
+          // Exact duplicate - ignore
+        } else if (text.length > lastSeg.length && text.toLowerCase().startsWith(lastSeg.toLowerCase())) {
+          // CUMULATIVE: New text extends what we've seen - replace segment portion with full text
           const base = currentUserLineRef.current.slice(0, segmentStartLenRef.current);
-          currentUserLineRef.current = (base ? base + ' ' : '') + text;
+          const separator = base.length > 0 && !base.endsWith(' ') ? ' ' : '';
+          currentUserLineRef.current = base + separator + text;
           lastSegmentTextRef.current = text;
+        } else if (lastSeg.toLowerCase().startsWith(text.toLowerCase()) && text.length < lastSeg.length) {
+          // Shorter version of existing segment - ignore (stale update)
         } else {
-          // INCREMENTAL: Gemini sent a new chunk only - append without adding space
-          // (Gemini may send "stu"+"dent" for "student" - adding space would break words)
+          // INCREMENTAL: New chunk that doesn't extend current segment
+          // This could be additional words spoken after a pause
           const base = currentUserLineRef.current.slice(0, segmentStartLenRef.current);
           const existingSegment = currentUserLineRef.current.slice(segmentStartLenRef.current);
-          const toAppend = existingSegment + text;
-          currentUserLineRef.current = (base ? base + ' ' : '') + toAppend.trim();
-          lastSegmentTextRef.current = toAppend.trim();
+
+          // Check if this text is already at the end of existing segment (duplicate)
+          if (existingSegment.endsWith(text) || existingSegment.endsWith(text.trim())) {
+            // Already have this text - ignore
+          } else {
+            // New text to append - determine if space is needed
+            const needsSpace = existingSegment.length > 0 &&
+              /[a-zA-Z0-9]$/.test(existingSegment) &&
+              /^[a-zA-Z0-9]/.test(text);
+            const separator = needsSpace ? ' ' : '';
+            const newSegment = existingSegment + separator + text;
+            const baseWithSep = base.length > 0 && !base.endsWith(' ') ? base + ' ' : base;
+            currentUserLineRef.current = baseWithSep + newSegment.trim();
+            lastSegmentTextRef.current = newSegment.trim();
+          }
         }
       }
       if (inputTrans.finished) {
-        // DON'T finalize here - keep accumulating until AI starts speaking.
-        // Just reset segment tracking so next segment appends correctly.
+        // Segment finished - reset segment tracking for the NEXT segment
+        // Update segmentStartLenRef so the next segment knows where to start
+        segmentStartLenRef.current = currentUserLineRef.current.length;
         lastSegmentTextRef.current = '';
-        segmentStartLenRef.current = 0;
         // Mark that user has spoken (for turn boundary detection)
         if (currentUserLineRef.current.trim()) {
           turnBoundaryRef.current = true;
@@ -1018,6 +1035,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
             sendTranscriptUpdate('user', currentUserLineRef.current.trim());
             currentUserLineRef.current = '';
             lastSegmentTextRef.current = '';
+            segmentStartLenRef.current = 0;
           }
           currentLineRef.current = { speaker, content, prefix: '' };
         }
@@ -1060,8 +1078,13 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
       currentSourceRef.current = null;
       audioQueueRef.current = [];
       preDecodedBuffersRef.current = [];
+      // Save any in-progress user text before clearing (don't lose user's words!)
+      if (currentUserLineRef.current.trim()) {
+        transcriptLinesRef.current.push(`You|||${currentUserLineRef.current.trim()}`);
+      }
       currentUserLineRef.current = '';
       lastSegmentTextRef.current = '';
+      segmentStartLenRef.current = 0;
       nextStartTimeRef.current = audioCtx.currentTime;
       isPlayingAudioRef.current = false;
       setIsTalking(false);
@@ -1080,7 +1103,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     if (sessionRef.current) {
       const closeResult = sessionRef.current.close();
       if (closeResult != null && typeof closeResult.catch === 'function') {
-        closeResult.catch(() => {});
+        closeResult.catch(() => { });
       }
       sessionRef.current = null;
     }
@@ -1097,7 +1120,7 @@ ${isIntro ? `Start with: "Hi ${candidate.name}, welcome! I'm ${panelist.name}, $
     if (preWarmedSessionRef.current?.session) {
       const closeResult = preWarmedSessionRef.current.session.close();
       if (closeResult != null && typeof closeResult.catch === 'function') {
-        closeResult.catch(() => {});
+        closeResult.catch(() => { });
       }
       preWarmedSessionRef.current = null;
     }
