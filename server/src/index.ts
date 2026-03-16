@@ -411,10 +411,11 @@ if (process.env.NODE_ENV === 'production') {
     app.use(express.static(clientBuildPath));
 
     // Handle SPA routing - serve index.html for all non-API/non-WS routes
-    app.get('*', (req: Request, res: Response) => {
-        if (!req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
-            res.sendFile(path.join(clientBuildPath, 'index.html'));
+    app.get('*', (req: Request, res: Response, next: NextFunction) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+            return next();
         }
+        res.sendFile(path.join(clientBuildPath, 'index.html'));
     });
 }
 
