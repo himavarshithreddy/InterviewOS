@@ -1,0 +1,20 @@
+{
+  "name": "InterviewOS",
+  "description": "AI-powered interview preparation platform with multi-panelist simulations",
+  "keywords": ["ai", "interview", "gemini", "nodejs", "react"],
+  "env": {
+    "GEMINI_API_KEY": {
+      "description": "Google Gemini API key for AI features",
+      "required": true
+    },
+    "NODE_ENV": {
+      "description": "Environment mode",
+      "value": "production"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+}

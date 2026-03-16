@@ -272,6 +272,50 @@ InterviewOS/
 
 ---
 
+## Deploy to Heroku
+
+### Prerequisites
+
+- A [Heroku](https://heroku.com) account
+- [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli) installed
+- A [Google Gemini API key](https://ai.google.dev/)
+
+### One-Click Deploy
+
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
+
+### Manual Deploy
+
+```bash
+# 1. Login to Heroku
+heroku login
+
+# 2. Create a new Heroku app
+heroku create your-app-name
+
+# 3. Set required environment variables
+heroku config:set GEMINI_API_KEY=your_gemini_api_key_here
+heroku config:set NODE_ENV=production
+
+# 4. Deploy
+git push heroku main
+
+# 5. Open the app
+heroku open
+```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `NODE_ENV` | No | Set automatically to `production` by Heroku |
+| `PORT` | No | Set automatically by Heroku |
+
+> **Note:** On Heroku the frontend is served as static files from the Express backend, so `CLIENT_URL` is not needed.
+
+---
+
 ## Gemini Models
 
 | Use Case | Model | Note |

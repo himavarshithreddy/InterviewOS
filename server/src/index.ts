@@ -1,3 +1,5 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -399,6 +401,22 @@ app.post('/api/industry-evaluate', async (req: Request, res: Response) => {
         });
     }
 });
+
+// In production, serve the frontend static files
+if (process.env.NODE_ENV === 'production') {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const clientBuildPath = path.join(__dirname, '../../dist');
+
+    app.use(express.static(clientBuildPath));
+
+    // Handle SPA routing - serve index.html for all non-API/non-WS routes
+    app.get('*', (req: Request, res: Response) => {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
+            res.sendFile(path.join(clientBuildPath, 'index.html'));
+        }
+    });
+}
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
