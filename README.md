@@ -33,7 +33,7 @@ flowchart TB
         RU[Resume Upload]
         PC[Panel Config]
         LI[Live Interview]
-        EM[Emotion & Body Language]
+        EM["Emotion & Body Language"]
         DB[Dashboard]
     end
 
@@ -96,7 +96,7 @@ flowchart LR
 sequenceDiagram
     participant User
     participant Frontend
-    participant GeminiLive as Gemini Live (2.5 Flash)
+    participant GeminiLive as "Gemini Live (2.5 Flash)"
     participant Orchestrator as Orchestration WS
     participant REST as REST API
 
@@ -134,7 +134,7 @@ flowchart TB
     end
 
     subgraph WS["WebSocket"]
-        LI[ws/interview (orchestration only)]
+        LI["ws/interview (orchestration only)"]
     end
 
     subgraph Core["Service Layer"]
