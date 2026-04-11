@@ -33,13 +33,13 @@ flowchart TB
         RU[Resume Upload]
         PC[Panel Config]
         LI[Live Interview]
-        EM[Emotion & Body Language]
+        EM["Emotion & Body Language"]
         DB[Dashboard]
     end
 
     subgraph Backend["Backend (Node.js + Express)"]
         REST[REST API]
-        WS[Orchestration WS (/ws/interview)]
+        WS["Orchestration WS (/ws/interview)"]
     end
 
     subgraph Services["Core Services"]
@@ -134,7 +134,7 @@ flowchart TB
     end
 
     subgraph WS["WebSocket"]
-        LI[ws/interview (orchestration only)]
+        LI["ws/interview (orchestration only)"]
     end
 
     subgraph Core["Service Layer"]
