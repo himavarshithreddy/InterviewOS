@@ -1,5 +1,5 @@
-import { GoogleGenAI } from '@google/genai';
-import { MODELS } from './geminiService.js';
+import OpenAI from 'openai';
+import { getOpenRouterClient, MODELS } from './geminiService.js';
 
 /**
  * Industry-Specific Deep Dives
@@ -45,7 +45,7 @@ export interface IndustryEvaluation {
 }
 
 export class IndustrySpecialist {
-    private client: GoogleGenAI;
+    private client: OpenAI;
 
     // Industry profiles
     private static readonly INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
@@ -198,8 +198,8 @@ export class IndustrySpecialist {
         }
     };
 
-    constructor(apiKey: string) {
-        this.client = new GoogleGenAI({ apiKey });
+    constructor(_apiKey?: string) {
+        this.client = getOpenRouterClient();
     }
 
     /**
@@ -255,11 +255,12 @@ Format as JSON array:
 ]
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.PRO,
-                contents: prompt
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" }
             });
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
 
             const questions = this.parseQuestionsResponse(response, industry, difficulty);
             return questions;
@@ -315,11 +316,12 @@ Format as JSON:
 }
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.PRO,
-                contents: prompt
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" }
             });
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
 
             const evaluation = this.parseEvaluationResponse(response, industry);
             return evaluation;
@@ -351,11 +353,12 @@ Focus on:
 Format as a JSON array of strings.
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: prompt
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" }
             });
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
 
             const jsonMatch = response.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
@@ -398,11 +401,12 @@ Format as JSON:
 }
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.PRO,
-                contents: prompt
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" }
             });
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
 
             const jsonMatch = response.match(/\{[\s\S]*\}/);
             if (jsonMatch) {

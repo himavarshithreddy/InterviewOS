@@ -1,20 +1,41 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
 import dotenv from "dotenv";
 
-// Ensure .env is loaded before we read GEMINI_API_KEY
+// Ensure .env is loaded before we read OPENROUTER_KEY
 dotenv.config();
 
-// Model name constants for easy updates
+// Model name constants for easy updates (OpenRouter model IDs)
 export const MODELS = {
-    FLASH: "gemini-3-flash-preview",
-    PRO: "gemini-3-pro-preview",
-    LIVE: "gemini-2.5-flash-native-audio-preview-12-2025"  // Keep: live native audio only
+    FLASH: "google/gemma-4-31b-it:free",
+    PRO: "google/gemma-4-31b-it:free",
+    LIVE: "gemini-2.5-flash-native-audio-preview-12-2025"  // Keep: live native audio only (direct Gemini, not OpenRouter)
 } as const;
 
 // Retry configuration
 const MAX_RETRIES = 2;
 const INITIAL_RETRY_DELAY = 500;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
+
+// Shared OpenAI client configured for OpenRouter
+function createOpenRouterClient(): OpenAI {
+    const apiKey = process.env.OPENROUTER_KEY;
+    if (!apiKey) {
+        throw new Error("OPENROUTER_KEY environment variable is not set");
+    }
+    return new OpenAI({
+        baseURL: "https://openrouter.ai/api/v1",
+        apiKey,
+        defaultHeaders: {
+            "HTTP-Referer": "https://interviewos.app",
+            "X-Title": "InterviewOS",
+        },
+    });
+}
+
+// Export a shared client factory for other services
+export function getOpenRouterClient(): OpenAI {
+    return createOpenRouterClient();
+}
 
 interface CandidateProfile {
     name: string;
@@ -94,15 +115,40 @@ function createSampleAnalysisData(avgScore: number): Pick<FinalReport, 'bodyLang
     };
 }
 
+/**
+ * Helper to safely parse JSON returned by LLM APIs, handling common formatting issues
+ * like markdown code blocks and logging raw output on failure.
+ */
+function safeJsonParse<T>(text: string): T {
+    let cleanText = text.trim();
+    // Remove markdown code block formatting if present
+    if (cleanText.startsWith("```")) {
+        const firstNewline = cleanText.indexOf("\n");
+        if (firstNewline !== -1) {
+            cleanText = cleanText.substring(firstNewline + 1);
+        } else {
+            cleanText = cleanText.replace(/^```(json)?/, "");
+        }
+    }
+    if (cleanText.endsWith("```")) {
+        cleanText = cleanText.substring(0, cleanText.length - 3);
+    }
+    cleanText = cleanText.trim();
+
+    try {
+        return JSON.parse(cleanText) as T;
+    } catch (error) {
+        console.error("JSON parsing error. Raw output from LLM was:");
+        console.error(text);
+        throw error;
+    }
+}
+
 class GeminiService {
-    private client: GoogleGenAI;
+    private client: OpenAI;
 
     constructor() {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            throw new Error("GEMINI_API_KEY environment variable is not set");
-        }
-        this.client = new GoogleGenAI({ apiKey });
+        this.client = createOpenRouterClient();
     }
 
     /**
@@ -137,88 +183,65 @@ class GeminiService {
     }
 
     /**
-     * Map file mime type to Gemini-supported format
-     */
-    private getGeminiMimeType(mimeType: string): string {
-        const supported: Record<string, string> = {
-            "application/pdf": "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword": "application/msword",
-        };
-        return supported[mimeType] || "application/pdf";
-    }
-
-    /**
      * Parse resume from base64 document (PDF, DOC, DOCX)
      */
     async parseResume(base64Data: string, mimeType = "application/pdf"): Promise<CandidateProfile> {
         return this.retryWithBackoff(async () => {
-            const geminiMime = this.getGeminiMimeType(mimeType);
-
             const prompt = `Extract resume data. If NOT a resume/CV, set isResume:false. If it IS a resume:
 - name, jobTitle (current role, skip generic like "Employee"), summary (1-2 sentences)
 - experienceEntries: [{title,company,dates}] for each role
 - experience: key bullet points, skills: array, education: array
-- rawResumeText: concise extracted text (~500 chars)
+- rawResumeText: A short summary of the candidate's background and experience (strictly less than 500 characters, do not output the full resume text).
 - isResume: true/false
-Use empty strings/arrays for missing sections. Be concise.`;
+Use empty strings/arrays for missing sections. Be concise.
 
-            const response = await this.client.models.generateContent({
+You MUST respond with valid JSON matching this schema:
+{
+  "name": "string",
+  "jobTitle": "string",
+  "summary": "string",
+  "experienceEntries": [{"title": "string", "company": "string", "dates": "string"}],
+  "experience": ["string"],
+  "skills": ["string"],
+  "education": ["string"],
+  "rawResumeText": "string",
+  "isResume": true/false
+}
+
+CRITICAL: Do NOT output raw newlines, control characters, or unescaped double quotes inside the JSON string fields. All newlines within strings must be properly escaped as '\\n'.`;
+
+            const response = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: {
-                    parts: [
-                        {
-                            inlineData: {
-                                mimeType: geminiMime,
-                                data: base64Data
-                            }
-                        },
-                        { text: prompt }
-                    ]
-                },
-                config: {
-                    maxOutputTokens: 2048,
-                    temperature: 0.1,
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            name: { type: Type.STRING },
-                            jobTitle: { type: Type.STRING },
-                            summary: { type: Type.STRING },
-                            experienceEntries: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        title: { type: Type.STRING },
-                                        company: { type: Type.STRING },
-                                        dates: { type: Type.STRING }
-                                    }
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:${mimeType};base64,${base64Data}`
                                 }
                             },
-                            experience: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            skills: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            education: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            rawResumeText: { type: Type.STRING },
-                            isResume: { type: Type.BOOLEAN }
-                        },
-                        required: ["name", "experience", "skills", "education", "rawResumeText", "isResume"]
+                            { type: "text", text: prompt }
+                        ]
                     }
-                }
+                ],
+                max_tokens: 4096,
+                temperature: 0.1,
+                response_format: { type: "json_object" },
             });
 
-            const text = response.text;
+            const text = response.choices[0]?.message?.content;
             if (!text) {
-                throw new Error("Empty response from Gemini API");
+                throw new Error("Empty response from OpenRouter API");
             }
 
-            const parsed = JSON.parse(text) as CandidateProfile & {
+            const parsed = safeJsonParse<CandidateProfile & {
                 jobTitle?: string;
                 summary?: string;
                 experienceEntries?: { title: string; company: string; dates: string }[];
                 isResume: boolean;
-            };
+            }>(text);
 
             // Ensure experienceEntries exists for non-resume or missing data
             if (!parsed.experienceEntries) {
@@ -274,42 +297,40 @@ Use empty strings/arrays for missing sections. Be concise.`;
         - Gender (Must be "Male" or "Female" to assign appropriate voice)
         - AvatarColor (Pick one: "blue", "green", "pink", "purple", "orange", "red" - use different colors for each)
 
-        Return a JSON array of 3 objects.
+        You MUST respond with a JSON array of 3 objects with these fields:
+        [{"name": "string", "role": "string", "focus": "string", "gender": "Male" or "Female", "avatarColor": "string", "description": "string"}]
       `;
 
-            const response = await this.client.models.generateContent({
+            const response = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: prompt,
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                id: { type: Type.STRING },
-                                name: { type: Type.STRING },
-                                role: { type: Type.STRING },
-                                focus: { type: Type.STRING },
-                                gender: { type: Type.STRING, enum: ["Male", "Female"] },
-                                avatarColor: { type: Type.STRING },
-                                description: { type: Type.STRING }
-                            },
-                            required: ["name", "role", "focus", "gender", "avatarColor", "description"]
-                        }
-                    }
-                }
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" },
             });
 
-            const text = response.text;
+            const text = response.choices[0]?.message?.content;
             if (!text) {
-                throw new Error("Empty response from Gemini API");
+                throw new Error("Empty response from OpenRouter API");
             }
 
-            const rawPanelists = JSON.parse(text) as (Panelist & { gender: string })[];
+            // OpenRouter with json_object may wrap array in an object
+            let rawPanelists: (Panelist & { gender: string })[];
+            const parsed = safeJsonParse<any>(text);
+            if (Array.isArray(parsed)) {
+                rawPanelists = parsed;
+            } else if (parsed.panelists && Array.isArray(parsed.panelists)) {
+                rawPanelists = parsed.panelists;
+            } else {
+                // Try to find an array value in the object
+                const arrayVal = Object.values(parsed).find(v => Array.isArray(v));
+                if (arrayVal) {
+                    rawPanelists = arrayVal as (Panelist & { gender: string })[];
+                } else {
+                    throw new Error("Unexpected response format from OpenRouter API");
+                }
+            }
 
             console.log('--- GENERATING PANELISTS ---');
-            console.log('Raw Panelists from Gemini:', JSON.stringify(rawPanelists.map(p => ({ name: p.name, gender: p.gender })), null, 2));
+            console.log('Raw Panelists from OpenRouter:', JSON.stringify(rawPanelists.map(p => ({ name: p.name, gender: p.gender })), null, 2));
 
             // Voice assignment pools
             const maleVoices = ['Puck', 'Charon', 'Fenrir'];
@@ -380,8 +401,6 @@ Use empty strings/arrays for missing sections. Be concise.`;
         Body Language Trends: ${JSON.stringify(bodyLanguageHistory || [])}
         Emotion Trends: ${JSON.stringify(emotionHistory || [])}
         
-        Provide a JSON output with numerical scores (0-100), detailed feedback, specific improvements, and individual comments from the personas.
-        
         Scoring Guidelines:
         - Empty/minimal transcript (< 100 words or no substantive answers): 0-30 scores
         - Short responses with limited depth: 30-50 scores
@@ -395,42 +414,30 @@ Use empty strings/arrays for missing sections. Be concise.`;
         3. Evaluate communication clarity and confidence FROM THE TRANSCRIPT
         4. Assess cultural fit and enthusiasm shown DURING THE INTERVIEW
         5. Identify specific strengths and areas for improvement based on what they SAID, not what's on their resume
+
+        You MUST respond with valid JSON matching this schema:
+        {
+          "technicalScore": number (0-100),
+          "communicationScore": number (0-100),
+          "cultureFitScore": number (0-100),
+          "detailedFeedback": "string",
+          "improvements": ["string"],
+          "panelistComments": [{"name": "string", "comment": "string"}]
+        }
       `;
 
-            const response = await this.client.models.generateContent({
+            const response = await this.client.chat.completions.create({
                 model: MODELS.PRO,
-                contents: prompt,
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            technicalScore: { type: Type.NUMBER },
-                            communicationScore: { type: Type.NUMBER },
-                            cultureFitScore: { type: Type.NUMBER },
-                            detailedFeedback: { type: Type.STRING },
-                            improvements: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            panelistComments: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        name: { type: Type.STRING },
-                                        comment: { type: Type.STRING }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" },
             });
 
-            const text = response.text;
+            const text = response.choices[0]?.message?.content;
             if (!text) {
-                throw new Error("Empty response from Gemini API");
+                throw new Error("Empty response from OpenRouter API");
             }
 
-            const report = JSON.parse(text) as FinalReport;
+            const report = safeJsonParse<FinalReport>(text);
 
             // Validate and normalize scores
             const t = typeof report.technicalScore === 'number' && !isNaN(report.technicalScore) ? report.technicalScore : 50;

@@ -38,8 +38,8 @@ export function useVAD({ enabled, onSpeechEnd, onSpeechStart, stream }: UseVADOp
     onSpeechStart: () => {
       onSpeechStartRef.current?.();
     },
-    redemptionFrames: 8, // ~250ms of silence to confirm speech end (faster response)
-    minSpeechFrames: 3, // Minimum speech frames before considering it speech
+    redemptionMs: 250, // 250ms of silence to confirm speech end (faster response)
+    minSpeechMs: 100, // 100ms of speech before considering it speech
   });
 
   // Start VAD when we have stream and are enabled

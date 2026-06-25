@@ -75,6 +75,111 @@ flowchart TB
     GS --> GP
 ```
 
+### Component Architecture Map
+
+File-level map of the browser UI, backend orchestration, and deploy stack. Click nodes on GitHub to jump to source files.
+
+```mermaid
+flowchart TD
+
+subgraph group_browser["Browser UI"]
+  node_app["App shell<br/>React root<br/>[App.tsx]"]
+  node_boot["Browser entry<br/>Vite bootstrap<br/>[index.tsx]"]
+  node_ui_resume["Resume upload<br/>feature UI<br/>[ResumeUploader.tsx]"]
+  node_ui_panel["Panel setup<br/>feature UI"]
+  node_ui_live["Live interview<br/>feature UI<br/>[LiveInterview.tsx]"]
+  node_ui_dash["Dashboard<br/>report UI<br/>[Dashboard.tsx]"]
+  node_ui_error["Error boundary<br/>ui guard<br/>[ErrorBoundary.tsx]"]
+  node_client_api["API client<br/>REST boundary<br/>[apiClient.ts]"]
+  node_vad(("Voice activity<br/>hook<br/>[useVAD.ts]"))
+  node_video(("Video analysis<br/>hook"))
+  node_session["Session state<br/>persistence util<br/>[sessionStorage.ts]"]
+  node_reportdl["Report export<br/>download util<br/>[reportDownload.ts]"]
+  node_audio{{"Audio worklet<br/>media processor<br/>[audio-processor.js]"}}
+  node_audutil["Audio utils<br/>media util<br/>[audioUtils.ts]"]
+end
+
+subgraph group_backend["Backend Orchestration"]
+  node_server_boot["Server entry<br/>Node bootstrap<br/>[index.ts]"]
+  node_ws["Live socket<br/>WebSocket control"]
+  node_orchestrator["Interview flow<br/>state orchestrator"]
+  node_gemini["Gemini service<br/>LLM integration<br/>[geminiService.ts]"]
+  node_emotion["Emotion analysis<br/>analysis service<br/>[emotionAnalyzer.ts]"]
+  node_coach["Presentation coach<br/>analysis service"]
+  node_specialist["Industry specialist<br/>domain service"]
+end
+
+subgraph group_infra["Deploy"]
+  node_nginx["Nginx config<br/>reverse proxy<br/>[nginx.conf]"]
+  node_deploysh["Deploy script<br/>ops script<br/>[deploy.sh]"]
+  node_oracle["Oracle setup<br/>ops script<br/>[oracle-setup.sh]"]
+end
+
+node_boot -->|"mounts"| node_app
+node_app -->|"renders"| node_ui_resume
+node_app -->|"renders"| node_ui_panel
+node_app -->|"renders"| node_ui_live
+node_app -->|"renders"| node_ui_dash
+node_app -->|"wraps"| node_ui_error
+node_ui_resume -->|"uploads"| node_client_api
+node_ui_panel -->|"configures"| node_client_api
+node_ui_live -->|"detects speech"| node_vad
+node_ui_live -->|"captures video"| node_video
+node_ui_live -->|"persists"| node_session
+node_ui_live -->|"processes audio"| node_audio
+node_audio -->|"uses"| node_audutil
+node_ui_live -->|"orchestrates"| node_ws
+node_ui_dash -->|"exports"| node_reportdl
+node_client_api -->|"calls"| node_server_boot
+node_server_boot -->|"hosts"| node_ws
+node_server_boot -->|"routes"| node_orchestrator
+node_orchestrator -->|"invokes"| node_gemini
+node_orchestrator -->|"evaluates"| node_emotion
+node_orchestrator -->|"evaluates"| node_coach
+node_orchestrator -->|"specializes"| node_specialist
+node_ws -->|"syncs state"| node_orchestrator
+node_ui_dash -->|"fetches report"| node_client_api
+node_deploysh -.->|"configures"| node_nginx
+node_deploysh -.->|"prepares"| node_oracle
+node_server_boot -.->|"uses"| node_gemini
+
+click node_app "https://github.com/himavarshithreddy/interviewos/blob/main/App.tsx"
+click node_boot "https://github.com/himavarshithreddy/interviewos/blob/main/index.tsx"
+click node_ui_resume "https://github.com/himavarshithreddy/interviewos/blob/main/components/ResumeUploader.tsx"
+click node_ui_panel "https://github.com/himavarshithreddy/interviewos/blob/main/components/PanelConfiguration.tsx"
+click node_ui_live "https://github.com/himavarshithreddy/interviewos/blob/main/components/LiveInterview.tsx"
+click node_ui_dash "https://github.com/himavarshithreddy/interviewos/blob/main/components/Dashboard.tsx"
+click node_ui_error "https://github.com/himavarshithreddy/interviewos/blob/main/src/components/ErrorBoundary.tsx"
+click node_client_api "https://github.com/himavarshithreddy/interviewos/blob/main/src/services/apiClient.ts"
+click node_vad "https://github.com/himavarshithreddy/interviewos/blob/main/src/hooks/useVAD.ts"
+click node_video "https://github.com/himavarshithreddy/interviewos/blob/main/src/hooks/useVideoAnalysis.ts"
+click node_session "https://github.com/himavarshithreddy/interviewos/blob/main/src/utils/sessionStorage.ts"
+click node_reportdl "https://github.com/himavarshithreddy/interviewos/blob/main/src/utils/reportDownload.ts"
+click node_audio "https://github.com/himavarshithreddy/interviewos/blob/main/public/worklets/audio-processor.js"
+click node_audutil "https://github.com/himavarshithreddy/interviewos/blob/main/utils/audioUtils.ts"
+click node_server_boot "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/index.ts"
+click node_ws "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/websocket/liveInterviewHandler.ts"
+click node_orchestrator "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/services/interviewOrchestrator.ts"
+click node_gemini "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/services/geminiService.ts"
+click node_emotion "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/services/emotionAnalyzer.ts"
+click node_coach "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/services/presentationCoach.ts"
+click node_specialist "https://github.com/himavarshithreddy/interviewos/blob/main/server/src/services/industrySpecialist.ts"
+click node_nginx "https://github.com/himavarshithreddy/interviewos/blob/main/deploy/nginx.conf"
+click node_deploysh "https://github.com/himavarshithreddy/interviewos/blob/main/deploy/deploy.sh"
+click node_oracle "https://github.com/himavarshithreddy/interviewos/blob/main/deploy/oracle-setup.sh"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_app,node_boot,node_ui_resume,node_ui_panel,node_ui_live,node_ui_dash,node_ui_error,node_client_api,node_vad,node_video,node_session,node_reportdl,node_audio,node_audutil toneBlue
+class node_server_boot,node_ws,node_orchestrator,node_gemini,node_emotion,node_coach,node_specialist toneAmber
+class node_nginx,node_deploysh,node_oracle toneMint
+```
+
 ### User Flow
 
 ```mermaid
@@ -215,7 +320,7 @@ flowchart LR
 
 | Path | Description |
 |------|-------------|
-| `ws://localhost:3001/ws/interview` | Live interview session |
+| `ws://localhost:5001/ws/interview` | Live interview session |
 
 ---
 
@@ -225,12 +330,14 @@ flowchart LR
 |-------|---------------|
 | **Frontend** | React 19, TypeScript 5.8, Vite, Tailwind CSS, Recharts, Axios, Framer Motion |
 | **Backend** | Node.js 20+, Express, WebSocket (`ws`), Multer, dotenv |
-| **AI** | Gemini 3 Flash, Gemini 3 Pro, Gemini 2.5 Flash Live (browser) |
+| **AI** | OpenRouter google/gemma-4-31b-it:free (backend), Gemini 2.5 Flash Live (browser) |
 | **Services** | `GeminiService`, `InterviewOrchestrator`, `EmotionAnalyzer`, `PresentationCoach`, `IndustrySpecialist` |
 
 ---
 
 ## Project Structure
+
+See [Component Architecture Map](#component-architecture-map) for how these files connect.
 
 ```
 InterviewOS/
@@ -276,9 +383,9 @@ InterviewOS/
 
 | Use Case | Model | Note |
 |----------|-------|------|
-| Resume parsing | `gemini-3-flash-preview` | Fast extraction |
-| Panelist generation | `gemini-3-flash-preview` | Persona creation |
-| Final evaluation | `gemini-3-pro-preview` | Deep reasoning |
+| Resume parsing | `google/gemma-4-31b-it:free` (OpenRouter) | Fast extraction & visual parsing |
+| Panelist generation | `google/gemma-4-31b-it:free` (OpenRouter) | Persona creation |
+| Final evaluation | `google/gemma-4-31b-it:free` (OpenRouter) | Deep reasoning & evaluation |
 | Live interview | `gemini-2.5-flash-native-audio-preview-12-2025` | Native audio Live API (browser) |
 
 ---

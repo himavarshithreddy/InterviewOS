@@ -1,5 +1,5 @@
-import { GoogleGenAI } from '@google/genai';
-import { MODELS } from './geminiService.js';
+import OpenAI from 'openai';
+import { getOpenRouterClient, MODELS } from './geminiService.js';
 
 /**
  * Body Language & Presentation Coach
@@ -89,7 +89,7 @@ export interface SpeechPatternAnalysis {
 }
 
 export class PresentationCoach {
-    private client: GoogleGenAI;
+    private client: OpenAI;
     private bodyLanguageHistory: BodyLanguageAnalysis[] = [];
     private speechPatternHistory: SpeechPatternAnalysis[] = [];
 
@@ -97,8 +97,8 @@ export class PresentationCoach {
     // Set to false to enable real-time AI analysis (requires sufficient API quota)
     private readonly USE_SIMULATED_DATA = true;
 
-    constructor(apiKey: string) {
-        this.client = new GoogleGenAI({ apiKey });
+    constructor(_apiKey?: string) {
+        this.client = getOpenRouterClient();
     }
 
     /**
@@ -153,17 +153,24 @@ Format as JSON with these exact fields:
 }
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: 'video/mp4', data: videoData } }
-                    ]
-                }
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            {
+                                type: "image_url",
+                                image_url: { url: `data:video/mp4;base64,${videoData}` }
+                            }
+                        ]
+                    }
+                ],
+                response_format: { type: "json_object" }
             });
 
-            const response = result.text;
+            const response = result.choices[0]?.message?.content;
             if (!response) {
                 return this.getDefaultBodyLanguageAnalysis();
             }
@@ -226,19 +233,23 @@ Format as JSON:
 }
             `.trim();
 
-            const parts: any[] = [{ text: prompt }];
+            const content: any[] = [{ type: "text", text: prompt }];
             if (audioData) {
-                parts.push({ inlineData: { mimeType: 'audio/wav', data: audioData } });
+                content.push({
+                    type: "input_audio",
+                    input_audio: { data: audioData, format: "wav" }
+                });
             }
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: { parts }
+                messages: [{ role: "user", content }],
+                response_format: { type: "json_object" }
             });
 
-            const response = result.text;
+            const response = result.choices[0]?.message?.content;
             if (!response) {
-                console.error('Empty response from Gemini API');
+                console.error('Empty response from OpenRouter API');
                 return this.getDefaultSpeechPatternAnalysis();
             }
             const analysis = this.parseSpeechPatternResponse(response, fillerWords);

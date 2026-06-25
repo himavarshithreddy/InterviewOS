@@ -73,7 +73,7 @@ echo "       Building backend..."
 cd server
 cat > .env << EOF
 GEMINI_API_KEY=$GEMINI_KEY
-PORT=3001
+PORT=5001
 CLIENT_URL=http://$PUBLIC_IP
 NODE_ENV=production
 EOF

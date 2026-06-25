@@ -1,5 +1,5 @@
-import { GoogleGenAI } from '@google/genai';
-import { MODELS } from './geminiService.js';
+import OpenAI from 'openai';
+import { getOpenRouterClient, MODELS } from './geminiService.js';
 
 /**
  * Emotion & Sentiment Analysis Service
@@ -56,11 +56,11 @@ export interface EmotionTrend {
 }
 
 export class EmotionAnalyzer {
-    private client: GoogleGenAI;
+    private client: OpenAI;
     private emotionHistory: EmotionAnalysis[] = [];
 
-    constructor(apiKey: string) {
-        this.client = new GoogleGenAI({ apiKey });
+    constructor(_apiKey?: string) {
+        this.client = getOpenRouterClient();
     }
 
     /**
@@ -92,17 +92,24 @@ Also provide:
 Format your response as JSON.
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: 'audio/wav', data: audioData } }
-                    ]
-                }
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            {
+                                type: "input_audio",
+                                input_audio: { data: audioData, format: "wav" }
+                            } as any
+                        ]
+                    }
+                ],
+                response_format: { type: "json_object" }
             });
 
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
             const analysis = this.parseEmotionResponse(response, transcript);
 
             this.emotionHistory.push(analysis);
@@ -144,17 +151,24 @@ Provide 2-3 specific recommendations based on these DYNAMICS.
 Format as JSON.
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: 'video/mp4', data: videoData } }
-                    ]
-                }
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            {
+                                type: "image_url",
+                                image_url: { url: `data:video/mp4;base64,${videoData}` }
+                            }
+                        ]
+                    }
+                ],
+                response_format: { type: "json_object" }
             });
 
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
             const analysis = this.parseEmotionResponse(response, transcript);
 
             this.emotionHistory.push(analysis);
@@ -199,11 +213,12 @@ Format as JSON with these exact fields:
 }
             `.trim();
 
-            const result = await this.client.models.generateContent({
+            const result = await this.client.chat.completions.create({
                 model: MODELS.FLASH,
-                contents: prompt
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" }
             });
-            const response = result.text || '';
+            const response = result.choices[0]?.message?.content || '';
 
             const analysis = this.parseEmotionResponse(response, transcript);
             this.emotionHistory.push(analysis);
@@ -215,7 +230,7 @@ Format as JSON with these exact fields:
     }
 
     /**
-     * Parse Gemini response into EmotionAnalysis
+     * Parse API response into EmotionAnalysis
      */
     private parseEmotionResponse(response: string, transcript: string): EmotionAnalysis {
         try {

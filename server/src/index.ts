@@ -14,8 +14,8 @@ import { IndustrySpecialist, Industry } from './services/industrySpecialist.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+const PORT = process.env.PORT || 5001;
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
 // Middleware
 app.use(cors({
@@ -163,7 +163,7 @@ app.post('/api/analyze-emotion', async (req: Request, res: Response) => {
 
         lastEmotionRequest = now;
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
         }
@@ -243,7 +243,7 @@ app.post('/api/analyze-body-language', async (req: Request, res: Response) => {
 
         lastBodyLanguageRequest = now;
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
         }
@@ -289,7 +289,7 @@ app.post('/api/analyze-speech', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Transcript is required' });
         }
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
         }
@@ -314,7 +314,7 @@ app.get('/api/industry/:industry', async (req: Request, res: Response) => {
     try {
         const industry = req.params.industry as Industry;
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
         }
@@ -343,7 +343,7 @@ app.post('/api/industry-questions', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Industry, role, and difficulty are required' });
         }
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
         }
@@ -377,7 +377,7 @@ app.post('/api/industry-evaluate', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Industry, question, answer, and role are required' });
         }
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_KEY;
         if (!apiKey) {
             return res.status(500).json({ error: 'API key not configured' });
         }
